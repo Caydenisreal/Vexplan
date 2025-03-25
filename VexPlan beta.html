@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VexPlan - V5RC High Stakes Simulation</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #333333;
+        }
+        h1 {
+            font-size: 36px;
+            color: #3498db;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        .credits {
+            color: #ecf0f1;
+            font-size: 16px;
+            margin: 5px 0;
+            text-align: center;
+        }
+        .credits a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        .credits a:hover {
+            text-decoration: underline;
+        }
+        .main-container {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        #game-container {
+            position: relative;
+            width: 720px;
+            height: 720px;
+            background-color: #555555;
+            border: 4px solid #34495e;
+            border-radius: 10px;
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        }
+        #field-canvas, #drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #drawing-canvas {
+            z-index: 1;
+            pointer-events: none;
+        }
+        #drawing-canvas.drawing-active {
+            pointer-events: auto;
+        }
+        #score-display, #drawing-tools {
+            width: 250px;
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        #score-display h2, #drawing-tools h2 {
+            margin: 0 0 10px 0;
+            font-size: 20px;
+            border-bottom: 1px solid #7f8c8d;
+            padding-bottom: 5px;
+        }
+        #score-display p, #drawing-tools p {
+            margin: 5px 0;
+            font-size: 16px;
+        }
+        #score-display button, #score-display select, #score-display input,
+        #drawing-tools button, #drawing-tools select {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        #score-display button, #drawing-tools button {
+            background-color: #3498db;
+            color: white;
+            cursor: pointer;
+        }
+        #score-display button:hover, #drawing-tools button:hover {
+            background-color: #2980b9;
+        }
+        #score-display select, #drawing-tools select {
+            background-color: #7f8c8d;
+            color: white;
+            cursor: pointer;
+        }
+        #score-display select:hover, #drawing-tools select:hover {
+            background-color: #6a737b;
+        }
+        #score-display input {
+            background-color: #ecf0f1;
+            color: black;
+            cursor: text;
+        }
+        #score-display input::placeholder {
+            color: #7f8c8d;
+        }
+        #context-menu {
+            position: absolute;
+            background-color: #ffffff;
+            border: 1px solid #34495e;
+            padding: 5px;
+            display: none;
+            z-index: 3;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        #context-menu ul {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+        #context-menu li {
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        #context-menu li:hover {
+            background-color: #ecf0f1;
+        }
+        #tutorial-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 4;
+            justify-content: center;
+            align-items: center;
+        }
+        #tutorial-content {
+            background-color: white;
+            width: 600px;
+            max-height: 80vh;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            overflow-y: auto;
+        }
+        #tutorial-content h2 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        #tutorial-content p {
+            line-height: 1.6;
+            color: #34495e;
+        }
+        #tutorial-content button {
+            padding: 10px 20px;
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #tutorial-content button:hover {
+            background-color: #c0392b;
+        }
+    </style>
+</head>
+<body>
+    <h1>VexPlan</h1>
+    <div class="credits">Created by Cayden 11137A</div>
+    <div class="credits">
+        <a href="https://www.instagram.com/11137a_unityonevex?igsh=MTFoN21td2RveHlycw%3D%3D&utm_source=qr" target="_blank">
+            Our Instagram
+        </a>
+    </div>
+    <div class="main-container">
+        <div id="drawing-tools">
+            <h2>Drawing Tools</h2>
+            <button id="toggle-drawing">Toggle Drawing Mode</button>
+            <select id="drawing-color">
+                <option value="black">Black</option>
+                <option value="red">Red</option>
+                <option value="blue">Blue</option>
+                <option value="green">Green</option>
+            </select>
+            <select id="drawing-size">
+                <option value="2">Small (2px)</option>
+                <option value="5">Medium (5px)</option>
+                <option value="10">Large (10px)</option>
+                <option value="15">Extra Large (15px)</option>
+                <option value="30">Max (30px)</option>
+            </select>
+            <select id="drawing-shape">
+                <option value="normal">Normal</option>
+                <option value="square">Square</option>
+                <option value="arrow">Arrow</option>
+            </select>
+            <button id="erase-tool">Erase</button>
+            <button id="clear-drawing">Clear Drawing</button>
+        </div>
+        <div id="game-container">
+            <canvas id="field-canvas" width="720" height="720"></canvas>
+            <canvas id="drawing-canvas" width="720" height="720"></canvas>
+            <div id="context-menu">
+                <ul></ul>
+            </div>
+        </div>
+        <div id="score-display">
+            <h2>Scoreboard</h2>
+            <p>Red: <span id="red-score">0</span></p>
+            <p>Blue: <span id="blue-score">0</span></p>
+            <h2>Team Numbers</h2>
+            <p>Red Robot 1: <input id="red-team-1" type="text" placeholder="Enter team number" oninput="updateTeamNumber(0, this.value)"></p>
+            <p>Red Robot 2: <input id="red-team-2" type="text" placeholder="Enter team number" oninput="updateTeamNumber(1, this.value)"></p>
+            <p>Blue Robot 1: <input id="blue-team-1" type="text" placeholder="Enter team number" oninput="updateTeamNumber(2, this.value)"></p>
+            <p>Blue Robot 2: <input id="blue-team-2" type="text" placeholder="Enter team number" oninput="updateTeamNumber(3, this.value)"></p>
+            <h2>Controls</h2>
+            <button id="reset-button">Reset</button>
+            <button id="show-tutorial">Show Tutorial</button>
+        </div>
+    </div>
+    <div id="tutorial-modal">
+        <div id="tutorial-content">
+            <h2>VexPlan Tutorial - V5RC High Stakes</h2>
+            <p><strong>Objective:</strong> In V5RC High Stakes, two alliances (Red and Blue) compete to score points by placing colored rings (red or blue) on stakes and mobile goals, climbing the central ladder, or hanging from the ladder or stakes. The goal is to maximize your alliance's score while minimizing the opponent's.</p>
+            <p><strong>Game Elements:</strong></p>
+            <ul>
+                <li><strong>Robots:</strong> Red and blue squares represent robots (two per alliance). You can rename them with team numbers in the "Team Numbers" section.</li>
+                <li><strong>Mobile Goals:</strong> Orange hexagons that can hold up to 6 rings.</li>
+                <li><strong>Stakes:</strong>
+                    <ul>
+                        <li>Red/Blue Alliance Stakes (on the left/right walls): Only score for matching ring colors.</li>
+                        <li>Black Neutral Stakes (top/bottom walls): Score for any ring color.</li>
+                        <li>Yellow High Stake (center): Scores 6 points for the ring's alliance.</li>
+                    </ul>
+                </li>
+                <li><strong>Ladder:</strong> Pink diamond in the center where robots can climb or hang for bonus points.</li>
+                <li><strong>Corners:</strong> Green triangles in the corners:
+                    <ul>
+                        <li>Positive Corners (bottom-left, bottom-right): Double points for mobile goals.</li>
+                        <li>Negative Corners (top-left, top-right): Subtract points (minimum 0).</li>
+                    </ul>
+                </li>
+            </ul>
+            <p><strong>How to Use VexPlan:</strong></p>
+            <ol>
+                <li><strong>Rename Robots:</strong> In the "Team Numbers" section on the right, type a team number for each robot to label them (e.g., "123A"). The team number will appear on the robot square.</li>
+                <li><strong>Drag Robots and Mobile Goals:</strong> Click and drag robots (red/blue squares) or mobile goals (orange hexagons) to move them around the field.</li>
+                <li><strong>Add/Remove Rings:</strong> Right-click on a mobile goal, stake, or high stake to open a menu. Choose to add or set a red/blue ring, or remove a ring if present.</li>
+                <li><strong>Climb the Ladder:</strong> Move a robot onto the ladder (pink diamond), then right-click to set a climb level (1-3) for bonus points.</li>
+                <li><strong>Hang from Ladder or Stakes:</strong> Right-click a robot to set it to hang from the ladder or a nearby stake. Hanging scores additional points but cannot be combined with climbing.</li>
+                <li><strong>Draw Plans:</strong> In the "Drawing Tools" section on the left, click "Toggle Drawing Mode," select a color, size, and shape (Normal, Square, Arrow), and draw on the field to plan strategies. Use "Erase" to remove specific lines or "Clear Drawing" to erase everything.</li>
+                <li><strong>Reset:</strong> Click "Reset" in the right panel to return all elements to their starting positions. Team numbers will persist after a reset.</li>
+            </ol>
+            <p><strong>Scoring:</strong></p>
+            <ul>
+                <li><strong>Alliance Stakes:</strong> 1 point per matching ring, +2 if the top ring matches.</li>
+                <li><strong>Neutral Stakes:</strong> 1 point per ring, +2 for the top ring's alliance.</li>
+                <li><strong>High Stake:</strong> 6 points for the ring's alliance.</li>
+                <li><strong>Mobile Goals:</strong> 1 point per ring, +2 for the top ring's alliance, modified by corner effects.</li>
+                <li><strong>Climbing:</strong> 3/6/12 points for levels 1/2/3, +2 if a ring is on the high stake.</li>
+                <li><strong>Hanging:</strong>
+                    <ul>
+                        <li>Ladder: 5 points per robot.</li>
+                        <li>Alliance Stakes: 4 points if the robot's alliance matches the stake, 2 points otherwise.</li>
+                        <li>Neutral Stakes: 3 points per robot.</li>
+                        <li>Bonus: +1 point if hanging from a stake with at least one ring.</li>
+                    </ul>
+                </li>
+            </ul>
+            <button onclick="closeTutorial()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // Constants
+        const FIELD_SIZE = 720;
+        const ROBOT_SIZE = 90;
+        const MOBILE_GOAL_SIZE = 50;
+        const STAKE_RADIUS = 9;
+        const LADDER_SIZE = 120;
+        const CORNER_SIZE = 60;
+        const RING_OUTER_RADIUS = 7;
+        const RING_INNER_RADIUS = 4;
+
+        // Canvas setup
+        const fieldCanvas = document.getElementById('field-canvas');
+        const fieldCtx = fieldCanvas.getContext('2d');
+        const drawingCanvas = document.getElementById('drawing-canvas');
+        const drawingCtx = drawingCanvas.getContext('2d');
+        const contextMenu = document.getElementById('context-menu');
+
+        // Drawing state
+        let drawingMode = false;
+        let isDrawing = false;
+        let isErasing = false;
+        let startX = 0;
+        let startY = 0;
+        let drawingColor = 'black';
+        let drawingSize = 2;
+        let drawingShape = 'normal';
+
+        // Game objects
+        const robots = [
+            { x: 30, y: 30, color: 'red', alliance: 'red', dragging: false, climbLevel: 0, hanging: null, teamNumber: "" },
+            { x: 30, y: FIELD_SIZE - 120, color: 'red', alliance: 'red', dragging: false, climbLevel: 0, hanging: null, teamNumber: "" },
+            { x: FIELD_SIZE - 120, y: 30, color: 'blue', alliance: 'blue', dragging: false, climbLevel: 0, hanging: null, teamNumber: "" },
+            { x: FIELD_SIZE - 120, y: FIELD_SIZE - 120, color: 'blue', alliance: 'blue', dragging: false, climbLevel: 0, hanging: null, teamNumber: "" }
+        ];
+
+        const mobileGoals = [
+            { x: 480, y: 235, maxRings: 6, ringColors: [], dragging: false },
+            { x: 360, y: 595, maxRings: 6, ringColors: [], dragging: false },
+            { x: 240, y: 235, maxRings: 6, ringColors: [], dragging: false },
+            { x: 480, y: 475, maxRings: 6, ringColors: [], dragging: false },
+            { x: 240, y: 475, maxRings: 6, ringColors: [], dragging: false }
+        ];
+
+        const stakes = [
+            { x: 0, y: FIELD_SIZE / 2, color: 'red', maxRings: 2, ringColors: [] },
+            { x: FIELD_SIZE, y: FIELD_SIZE / 2, color: 'blue', maxRings: 2, ringColors: [] },
+            { x: FIELD_SIZE / 2, y: 0, color: 'black', maxRings: 6, ringColors: [] },
+            { x: FIELD_SIZE / 2, y: FIELD_SIZE, color: 'black', maxRings: 6, ringColors: [] }
+        ];
+
+        const ladder = {
+            x: FIELD_SIZE / 2 - LADDER_SIZE / 2,
+            y: FIELD_SIZE / 2 - LADDER_SIZE / 2,
+            width: LADDER_SIZE,
+            height: LADDER_SIZE,
+            highStake: { x: FIELD_SIZE / 2, y: FIELD_SIZE / 2, color: 'yellow', maxRings: 1, ringColors: [] }
+        };
+
+        let selectedObject = null;
+
+        function updateTeamNumber(robotIndex, teamNumber) {
+            robots[robotIndex].teamNumber = teamNumber;
+        }
+
+        function drawField() {
+            const gradient = fieldCtx.createLinearGradient(0, 0, FIELD_SIZE, FIELD_SIZE);
+            gradient.addColorStop(0, '#555555');
+            gradient.addColorStop(1, '#444444');
+            fieldCtx.fillStyle = gradient;
+            fieldCtx.fillRect(0, 0, FIELD_SIZE, FIELD_SIZE);
+
+            fieldCtx.strokeStyle = '#666666';
+            fieldCtx.lineWidth = 1;
+            fieldCtx.shadowBlur = 2;
+            fieldCtx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+            for (let i = 0; i < 6; i++) {
+                for (let j = 0; j < 6; j++) {
+                    fieldCtx.strokeRect(i * (FIELD_SIZE / 6), j * (FIELD_SIZE / 6), FIELD_SIZE / 6, FIELD_SIZE / 6);
+                }
+            }
+            fieldCtx.shadowBlur = 0;
+
+            const cornerGradient = fieldCtx.createLinearGradient(0, 0, CORNER_SIZE, CORNER_SIZE);
+            cornerGradient.addColorStop(0, '#2ecc71');
+            cornerGradient.addColorStop(1, '#27ae60');
+            fieldCtx.fillStyle = cornerGradient;
+            fieldCtx.beginPath();
+            fieldCtx.moveTo(0, 0);
+            fieldCtx.lineTo(CORNER_SIZE, 0);
+            fieldCtx.lineTo(0, CORNER_SIZE);
+            fieldCtx.fill();
+            fieldCtx.beginPath();
+            fieldCtx.moveTo(FIELD_SIZE - CORNER_SIZE, 0);
+            fieldCtx.lineTo(FIELD_SIZE, 0);
+            fieldCtx.lineTo(FIELD_SIZE, CORNER_SIZE);
+            fieldCtx.fill();
+            fieldCtx.beginPath();
+            fieldCtx.moveTo(0, FIELD_SIZE - CORNER_SIZE);
+            fieldCtx.lineTo(0, FIELD_SIZE);
+            fieldCtx.lineTo(CORNER_SIZE, FIELD_SIZE);
+            fieldCtx.fill();
+            fieldCtx.beginPath();
+            fieldCtx.moveTo(FIELD_SIZE - CORNER_SIZE, FIELD_SIZE);
+            fieldCtx.lineTo(FIELD_SIZE, FIELD_SIZE);
+            fieldCtx.lineTo(FIELD_SIZE, FIELD_SIZE - CORNER_SIZE);
+            fieldCtx.fill();
+
+            fieldCtx.strokeStyle = '#ffffff';
+            fieldCtx.lineWidth = 4;
+            fieldCtx.shadowBlur = 8;
+            fieldCtx.shadowColor = 'rgba(255, 255, 255, 0.3)';
+            fieldCtx.beginPath();
+            fieldCtx.moveTo(FIELD_SIZE / 2 - 5, 0);
+            fieldCtx.lineTo(FIELD_SIZE / 2 - 5, FIELD_SIZE);
+            fieldCtx.moveTo(FIELD_SIZE / 2 + 5, 0);
+            fieldCtx.lineTo(FIELD_SIZE / 2 + 5, FIELD_SIZE);
+            fieldCtx.stroke();
+            fieldCtx.shadowBlur = 0;
+        }
+
+        function drawHexagon(ctx, x, y, size, fillStyle) {
+            ctx.beginPath();
+            const radius = size / 2;
+            for (let i = 0; i < 6; i++) {
+                const angle = (Math.PI / 3) * i + (Math.PI / 6);
+                const px = x + radius * Math.cos(angle);
+                const py = y + radius * Math.sin(angle);
+                if (i === 0) {
+                    ctx.moveTo(px, py);
+                } else {
+                    ctx.lineTo(px, py);
+                }
+            }
+            ctx.closePath();
+            ctx.fillStyle = fillStyle;
+            ctx.fill();
+        }
+
+        function drawRing(ctx, x, y, outerRadius, innerRadius, color) {
+            ctx.beginPath();
+            ctx.arc(x, y, outerRadius, 0, 2 * Math.PI);
+            ctx.arc(x, y, innerRadius, 0, 2 * Math.PI, true);
+            ctx.fillStyle = color;
+            ctx.fill('evenodd');
+        }
+
+        function drawObjects() {
+            const ladderGradient = fieldCtx.createLinearGradient(ladder.x, ladder.y, ladder.x + ladder.width, ladder.y + ladder.height);
+            ladderGradient.addColorStop(0, '#ff6b6b');
+            ladderGradient.addColorStop(1, '#ff8787');
+            fieldCtx.strokeStyle = ladderGradient;
+            fieldCtx.lineWidth = 4;
+            fieldCtx.shadowBlur = 6;
+            fieldCtx.shadowColor = 'rgba(255, 107, 107, 0.4)';
+            fieldCtx.beginPath();
+            fieldCtx.moveTo(ladder.x + LADDER_SIZE / 2, ladder.y);
+            fieldCtx.lineTo(ladder.x + LADDER_SIZE, ladder.y + LADDER_SIZE / 2);
+            fieldCtx.lineTo(ladder.x + LADDER_SIZE / 2, ladder.y + LADDER_SIZE);
+            fieldCtx.lineTo(ladder.x, ladder.y + LADDER_SIZE / 2);
+            fieldCtx.closePath();
+            fieldCtx.stroke();
+            fieldCtx.shadowBlur = 0;
+
+            fieldCtx.fillStyle = '#f1c40f';
+            fieldCtx.shadowBlur = 4;
+            fieldCtx.shadowColor = 'rgba(241, 196, 15, 0.5)';
+            fieldCtx.beginPath();
+            fieldCtx.arc(ladder.highStake.x, ladder.highStake.y, STAKE_RADIUS, 0, 2 * Math.PI);
+            fieldCtx.fill();
+            ladder.highStake.ringColors.forEach((ringColor, index) => {
+                drawRing(fieldCtx, ladder.highStake.x, ladder.highStake.y - (index + 1) * 15, RING_OUTER_RADIUS, RING_INNER_RADIUS, ringColor);
+            });
+            fieldCtx.shadowBlur = 0;
+
+            stakes.forEach(stake => {
+                fieldCtx.fillStyle = stake.color;
+                fieldCtx.shadowBlur = 4;
+                fieldCtx.shadowColor = `rgba(${stake.color === 'red' ? '255, 0, 0' : stake.color === 'blue' ? '0, 0, 255' : '0, 0, 0'}, 0.5)`;
+                fieldCtx.beginPath();
+                fieldCtx.arc(stake.x, stake.y, STAKE_RADIUS, 0, 2 * Math.PI);
+                fieldCtx.fill();
+                stake.ringColors.forEach((ringColor, index) => {
+                    drawRing(fieldCtx, stake.x, stake.y - (index + 1) * 15, RING_OUTER_RADIUS, RING_INNER_RADIUS, ringColor);
+                });
+                fieldCtx.shadowBlur = 0;
+            });
+
+            mobileGoals.forEach(mg => {
+                const mgGradient = fieldCtx.createLinearGradient(mg.x - MOBILE_GOAL_SIZE/2, mg.y - MOBILE_GOAL_SIZE/2, mg.x + MOBILE_GOAL_SIZE/2, mg.y + MOBILE_GOAL_SIZE/2);
+                mgGradient.addColorStop(0, '#e67e22');
+                mgGradient.addColorStop(1, '#d35400');
+                fieldCtx.shadowBlur = 4;
+                fieldCtx.shadowColor = 'rgba(230, 126, 34, 0.5)';
+                drawHexagon(fieldCtx, mg.x, mg.y, MOBILE_GOAL_SIZE, mgGradient);
+                
+                fieldCtx.fillStyle = '#f1c40f';
+                fieldCtx.beginPath();
+                fieldCtx.arc(mg.x, mg.y, STAKE_RADIUS, 0, 2 * Math.PI);
+                fieldCtx.fill();
+                mg.ringColors.forEach((ringColor, index) => {
+                    drawRing(fieldCtx, mg.x, mg.y - (index + 1) * 15, RING_OUTER_RADIUS, RING_INNER_RADIUS, ringColor);
+                });
+                fieldCtx.shadowBlur = 0;
+            });
+
+            robots.forEach(robot => {
+                const robotGradient = fieldCtx.createLinearGradient(robot.x, robot.y, robot.x + ROBOT_SIZE, robot.y + ROBOT_SIZE);
+                robotGradient.addColorStop(0, robot.color === 'red' ? '#e74c3c' : '#3498db');
+                robotGradient.addColorStop(1, robot.color === 'red' ? '#c0392b' : '#2980b9');
+                fieldCtx.fillStyle = robotGradient;
+                fieldCtx.shadowBlur = 6;
+                fieldCtx.shadowColor = `rgba(${robot.color === 'red' ? '231, 76, 60' : '52, 152, 219'}, 0.5)`;
+                fieldCtx.fillRect(robot.x, robot.y, ROBOT_SIZE, ROBOT_SIZE);
+
+                if (robot.teamNumber) {
+                    fieldCtx.font = 'bold 16px Arial';
+                    fieldCtx.textAlign = 'center';
+                    fieldCtx.textBaseline = 'middle';
+                    const textX = robot.x + ROBOT_SIZE / 2;
+                    const textY = robot.y + ROBOT_SIZE / 2;
+
+                    fieldCtx.strokeStyle = 'black';
+                    fieldCtx.lineWidth = 4;
+                    fieldCtx.strokeText(robot.teamNumber, textX, textY);
+
+                    fieldCtx.fillStyle = '#ffffff';
+                    fieldCtx.fillText(robot.teamNumber, textX, textY);
+                }
+
+                if (robot.hanging) {
+                    fieldCtx.strokeStyle = '#333333';
+                    fieldCtx.lineWidth = 3;
+                    fieldCtx.shadowBlur = 4;
+                    fieldCtx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                    fieldCtx.beginPath();
+                    const robotCenterX = robot.x + ROBOT_SIZE / 2;
+                    const robotCenterY = robot.y + ROBOT_SIZE / 2;
+                    let hangX, hangY;
+                    if (robot.hanging === 'ladder') {
+                        hangX = ladder.highStake.x;
+                        hangY = ladder.highStake.y;
+                    } else if (robot.hanging.startsWith('stake')) {
+                        const stakeIndex = parseInt(robot.hanging.slice(5));
+                        hangX = stakes[stakeIndex].x;
+                        hangY = stakes[stakeIndex].y;
+                    }
+                    fieldCtx.moveTo(robotCenterX, robotCenterY);
+                    fieldCtx.lineTo(hangX, hangY);
+                    fieldCtx.stroke();
+                }
+                fieldCtx.shadowBlur = 0;
+            });
+        }
+
+        function calculateScore() {
+            let redScore = 0;
+            let blueScore = 0;
+
+            stakes.forEach(stake => {
+                if (stake.color === 'red') {
+                    let redRings = stake.ringColors.filter(r => r === 'red').length;
+                    redScore += redRings;
+                    if (stake.ringColors.length > 0 && stake.ringColors[stake.ringColors.length - 1] === 'red') {
+                        redScore += 2;
+                    }
+                } else if (stake.color === 'blue') {
+                    let blueRings = stake.ringColors.filter(r => r === 'blue').length;
+                    blueScore += blueRings;
+                    if (stake.ringColors.length > 0 && stake.ringColors[stake.ringColors.length - 1] === 'blue') {
+                        blueScore += 2;
+                    }
+                } else {
+                    stake.ringColors.forEach(ring => {
+                        if (ring === 'red') redScore += 1;
+                        else if (ring === 'blue') blueScore += 1;
+                    });
+                    if (stake.ringColors.length > 0) {
+                        let topRing = stake.ringColors[stake.ringColors.length - 1];
+                        if (topRing === 'red') redScore += 2;
+                        else if (topRing === 'blue') blueScore += 2;
+                    }
+                }
+            });
+
+            if (ladder.highStake.ringColors.length > 0) {
+                let ringColor = ladder.highStake.ringColors[0];
+                if (ringColor === 'red') redScore += 6;
+                else if (ringColor === 'blue') blueScore += 6;
+            }
+
+            mobileGoals.forEach(mg => {
+                let mgRedScore = mg.ringColors.filter(r => r === 'red').length;
+                let mgBlueScore = mg.ringColors.filter(r => r === 'blue').length;
+                if (mg.ringColors.length > 0) {
+                    let topRing = mg.ringColors[mg.ringColors.length - 1];
+                    if (topRing === 'red') mgRedScore += 2;
+                    else if (topRing === 'blue') mgBlueScore += 2;
+                }
+                let mgCenterX = mg.x;
+                let mgCenterY = mg.y;
+                let inPositiveCorner = (mgCenterX < CORNER_SIZE && mgCenterY > FIELD_SIZE - CORNER_SIZE) || 
+                                       (mgCenterX > FIELD_SIZE - CORNER_SIZE && mgCenterY > FIELD_SIZE - CORNER_SIZE);
+                let inNegativeCorner = (mgCenterX < CORNER_SIZE && mgCenterY < CORNER_SIZE) || 
+                                       (mgCenterX > FIELD_SIZE - CORNER_SIZE && mgCenterY < CORNER_SIZE);
+                if (inPositiveCorner) {
+                    redScore += mgRedScore * 2;
+                    blueScore += mgBlueScore * 2;
+                } else if (inNegativeCorner) {
+                    redScore -= mgRedScore;
+                    if (redScore < 0) redScore = 0;
+                    blueScore -= mgBlueScore;
+                    if (blueScore < 0) blueScore = 0;
+                } else {
+                    redScore += mgRedScore;
+                    blueScore += mgBlueScore;
+                }
+            });
+
+            robots.forEach(robot => {
+                if (robot.climbLevel > 0) {
+                    let points = {1: 3, 2: 6, 3: 12}[robot.climbLevel];
+                    if (ladder.highStake.ringColors.length > 0) points += 2;
+                    if (robot.alliance === 'red') redScore += points;
+                    else blueScore += points;
+                }
+            });
+
+            robots.forEach(robot => {
+                if (robot.hanging) {
+                    let points = 0;
+                    if (robot.hanging === 'ladder') {
+                        points = 5;
+                    } else if (robot.hanging.startsWith('stake')) {
+                        const stakeIndex = parseInt(robot.hanging.slice(5));
+                        const stake = stakes[stakeIndex];
+                        if (stake.color === 'black') {
+                            points = 3;
+                        } else if (stake.color === robot.alliance) {
+                            points = 4;
+                        } else {
+                            points = 2;
+                        }
+                        if (stake.ringColors.length > 0) {
+                            points += 1;
+                        }
+                    }
+                    if (robot.alliance === 'red') redScore += points;
+                    else blueScore += points;
+                }
+            });
+
+            document.getElementById('red-score').textContent = Math.round(redScore);
+            document.getElementById('blue-score').textContent = Math.round(blueScore);
+        }
+
+        function isPointInHexagon(x, y, centerX, centerY, size) {
+            const radius = size / 2;
+            const dx = Math.abs(x - centerX);
+            const dy = Math.abs(y - centerY);
+            if (dx > radius || dy > radius * Math.sqrt(3) / 2) return false;
+            return (dy <= (radius * Math.sqrt(3) / 2)) && 
+                   (dx <= radius / 2 + (radius - dy * 2 / Math.sqrt(3)));
+        }
+
+        function isPointInDiamond(x, y, centerX, centerY, size) {
+            const dx = Math.abs(x - centerX);
+            const dy = Math.abs(y - centerY);
+            return (dx + dy) <= (size / 2);
+        }
+
+        fieldCanvas.addEventListener('mousedown', (e) => {
+            if (drawingMode) return;
+            const rect = fieldCanvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            for (let robot of robots) {
+                if (mouseX >= robot.x && mouseX <= robot.x + ROBOT_SIZE &&
+                    mouseY >= robot.y && mouseY <= robot.y + ROBOT_SIZE) {
+                    selectedObject = robot;
+                    break;
+                }
+            }
+            if (!selectedObject) {
+                for (let mg of mobileGoals) {
+                    if (isPointInHexagon(mouseX, mouseY, mg.x, mg.y, MOBILE_GOAL_SIZE)) {
+                        selectedObject = mg;
+                        break;
+                    }
+                }
+            }
+        });
+
+        fieldCanvas.addEventListener('mousemove', (e) => {
+            if (drawingMode || !selectedObject) return;
+            const rect = fieldCanvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            if (robots.includes(selectedObject)) {
+                selectedObject.x = Math.max(0, Math.min(mouseX - ROBOT_SIZE / 2, FIELD_SIZE - ROBOT_SIZE));
+                selectedObject.y = Math.max(0, Math.min(mouseY - ROBOT_SIZE / 2, FIELD_SIZE - ROBOT_SIZE));
+            } else {
+                const size = MOBILE_GOAL_SIZE;
+                selectedObject.x = Math.max(size / 2, Math.min(mouseX, FIELD_SIZE - size / 2));
+                selectedObject.y = Math.max(size / 2, Math.min(mouseY, FIELD_SIZE - size / 2));
+            }
+        });
+
+        fieldCanvas.addEventListener('mouseup', () => {
+            if (drawingMode) return;
+            selectedObject = null;
+        });
+
+        drawingCanvas.addEventListener('mousedown', (e) => {
+            if (!drawingMode) return;
+            const rect = drawingCanvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+            if (isErasing) {
+                drawingCtx.globalCompositeOperation = 'destination-out';
+                drawingCtx.lineWidth = 10;
+                isDrawing = true;
+            } else {
+                drawingCtx.globalCompositeOperation = 'source-over';
+                drawingCtx.lineWidth = drawingSize;
+                drawingCtx.strokeStyle = drawingColor;
+                isDrawing = true;
+                if (drawingShape === 'normal') {
+                    drawingCtx.beginPath();
+                    drawingCtx.moveTo(startX, startY);
+                }
+            }
+        });
+
+        drawingCanvas.addEventListener('mousemove', (e) => {
+            if (!drawingMode || !isDrawing) return;
+            const rect = drawingCanvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+
+            if (isErasing) {
+                drawingCtx.beginPath();
+                drawingCtx.moveTo(startX, startY);
+                drawingCtx.lineTo(currentX, currentY);
+                drawingCtx.stroke();
+                startX = currentX;
+                startY = currentY;
+            } else if (drawingShape === 'normal') {
+                drawingCtx.lineTo(currentX, currentY);
+                drawingCtx.stroke();
+                drawingCtx.beginPath();
+                drawingCtx.moveTo(currentX, currentY);
+            }
+        });
+
+        drawingCanvas.addEventListener('mouseup', (e) => {
+            if (!drawingMode || !isDrawing) return;
+            const rect = drawingCanvas.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+
+            drawingCtx.beginPath();
+            drawingCtx.strokeStyle = drawingColor;
+            drawingCtx.lineWidth = drawingSize;
+
+            if (isErasing) {
+                drawingCtx.stroke();
+            } else if (drawingShape === 'square') {
+                const width = endX - startX;
+                const height = endY - startY;
+                drawingCtx.strokeRect(startX, startY, width, height);
+            } else if (drawingShape === 'arrow') {
+                drawingCtx.moveTo(startX, startY);
+                drawingCtx.lineTo(endX, endY);
+                drawingCtx.stroke();
+
+                // Draw arrowhead
+                const angle = Math.atan2(endY - startY, endX - startX);
+                const arrowSize = drawingSize * 2;
+                drawingCtx.beginPath();
+                drawingCtx.moveTo(endX, endY);
+                drawingCtx.lineTo(
+                    endX - arrowSize * Math.cos(angle - Math.PI / 6),
+                    endY - arrowSize * Math.sin(angle - Math.PI / 6)
+                );
+                drawingCtx.moveTo(endX, endY);
+                drawingCtx.lineTo(
+                    endX - arrowSize * Math.cos(angle + Math.PI / 6),
+                    endY - arrowSize * Math.sin(angle + Math.PI / 6)
+                );
+                drawingCtx.stroke();
+            } else if (drawingShape === 'normal') {
+                drawingCtx.stroke();
+            }
+
+            isDrawing = false;
+            drawingCtx.globalCompositeOperation = 'source-over';
+        });
+
+        drawingCanvas.addEventListener('mouseleave', () => {
+            if (isDrawing && drawingShape === 'normal') {
+                drawingCtx.stroke();
+            }
+            isDrawing = false;
+            drawingCtx.globalCompositeOperation = 'source-over';
+        });
+
+        document.getElementById('toggle-drawing').addEventListener('click', () => {
+            drawingMode = !drawingMode;
+            document.getElementById('toggle-drawing').textContent = drawingMode ? 'Disable Drawing Mode' : 'Toggle Drawing Mode';
+            if (drawingMode) {
+                drawingCanvas.classList.add('drawing-active');
+            } else {
+                drawingCanvas.classList.remove('drawing-active');
+                isErasing = false;
+                drawingCtx.globalCompositeOperation = 'source-over';
+            }
+        });
+
+        document.getElementById('drawing-color').addEventListener('change', (e) => {
+            drawingColor = e.target.value;
+            isErasing = false;
+            drawingCtx.globalCompositeOperation = 'source-over';
+        });
+
+        document.getElementById('drawing-size').addEventListener('change', (e) => {
+            drawingSize = parseInt(e.target.value);
+            isErasing = false;
+            drawingCtx.globalCompositeOperation = 'source-over';
+        });
+
+        document.getElementById('drawing-shape').addEventListener('change', (e) => {
+            drawingShape = e.target.value;
+            isErasing = false;
+            drawingCtx.globalCompositeOperation = 'source-over';
+        });
+
+        document.getElementById('erase-tool').addEventListener('click', () => {
+            if (!drawingMode) {
+                drawingMode = true;
+                document.getElementById('toggle-drawing').textContent = 'Disable Drawing Mode';
+                drawingCanvas.classList.add('drawing-active');
+            }
+            isErasing = true;
+        });
+
+        document.getElementById('clear-drawing').addEventListener('click', () => {
+            drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+            isErasing = false;
+            drawingCtx.globalCompositeOperation = 'source-over';
+        });
+
+        fieldCanvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const rect = fieldCanvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            let target = null;
+            let targetX = 0;
+            let targetY = 0;
+
+            for (let stake of stakes.concat([ladder.highStake])) {
+                if (Math.hypot(stake.x - mouseX, stake.y - mouseY) < 22) {
+                    target = stake;
+                    targetX = stake.x;
+                    targetY = stake.y;
+                    break;
+                }
+            }
+
+            if (!target) {
+                for (let mg of mobileGoals) {
+                    if (isPointInHexagon(mouseX, mouseY, mg.x, mg.y, MOBILE_GOAL_SIZE)) {
+                        target = mg;
+                        targetX = mg.x;
+                        targetY = mg.y;
+                        break;
+                    }
+                }
+            }
+
+            if (!target) {
+                for (let robot of robots) {
+                    if (mouseX >= robot.x && mouseX <= robot.x + ROBOT_SIZE &&
+                        mouseY >= robot.y && mouseY <= robot.y + ROBOT_SIZE) {
+                        target = robot;
+                        targetX = robot.x + ROBOT_SIZE;
+                        targetY = robot.y + ROBOT_SIZE / 2;
+                        break;
+                    }
+                }
+            }
+
+            if (target) {
+                contextMenu.querySelector('ul').innerHTML = '';
+                if (stakes.includes(target) || mobileGoals.includes(target) || target === ladder.highStake) {
+                    let id = target === ladder.highStake ? 'highStake' : (stakes.includes(target) ? `stake${stakes.indexOf(target)}` : `mg${mobileGoals.indexOf(target)}`);
+                    if (target.maxRings === 1 || target.ringColors.length < target.maxRings) {
+                        let actionLabel = (target.maxRings === 1) ? 'Set' : 'Add';
+                        contextMenu.querySelector('ul').innerHTML += `
+                            <li onclick="setOrAddRing('${id}', 'red')">${actionLabel} Red Ring</li>
+                            <li onclick="setOrAddRing('${id}', 'blue')">${actionLabel} Blue Ring</li>
+                        `;
+                    }
+                    if (target.ringColors.length > 0) {
+                        contextMenu.querySelector('ul').innerHTML += `<li onclick="removeRing('${id}')">Remove Ring</li>`;
+                    }
+                } else if (robots.includes(target)) {
+                    const idx = robots.indexOf(target);
+                    const robot = robots[idx];
+                    const robotCenterX = robot.x + ROBOT_SIZE / 2;
+                    const robotCenterY = robot.y + ROBOT_SIZE / 2;
+
+                    if (!robot.hanging) {
+                        contextMenu.querySelector('ul').innerHTML += `
+                            <li onclick="setClimbLevel(${idx}, 1)">Climb Level 1</li>
+                            <li onclick="setClimbLevel(${idx}, 2)">Climb Level 2</li>
+                            <li onclick="setClimbLevel(${idx}, 3)">Climb Level 3</li>
+                            <li onclick="setClimbLevel(${idx}, 0)">No Climb</li>
+                        `;
+                    }
+
+                    if (robot.climbLevel === 0) {
+                        if (isPointInDiamond(robotCenterX, robotCenterY, ladder.x + LADDER_SIZE / 2, ladder.y + LADDER_SIZE / 2, LADDER_SIZE)) {
+                            contextMenu.querySelector('ul').innerHTML += `
+                                <li onclick="setHang(${idx}, 'ladder')">Hang from Ladder</li>
+                            `;
+                        }
+
+                        stakes.forEach((stake, stakeIdx) => {
+                            const distance = Math.hypot(stake.x - robotCenterX, stake.y - robotCenterY);
+                            if (distance < 100) {
+                                contextMenu.querySelector('ul').innerHTML += `
+                                    <li onclick="setHang(${idx}, 'stake${stakeIdx}')">Hang from ${stake.color.charAt(0).toUpperCase() + stake.color.slice(1)} Stake</li>
+                                `;
+                            }
+                        });
+                    }
+
+                    if (robot.hanging) {
+                        contextMenu.querySelector('ul').innerHTML += `
+                            <li onclick="setHang(${idx}, null)">No Hang</li>
+                        `;
+                    }
+                }
+                const menuX = targetX + 10;
+                const menuY = targetY - contextMenu.offsetHeight / 2;
+                contextMenu.style.left = `${rect.left + menuX}px`;
+                contextMenu.style.top = `${rect.top + Math.max(0, Math.min(menuY, FIELD_SIZE - contextMenu.offsetHeight))}px`;
+                contextMenu.style.display = 'block';
+            } else {
+                contextMenu.style.display = 'none';
+            }
+        });
+
+        document.addEventListener('click', () => {
+            contextMenu.style.display = 'none';
+        });
+
+        function getTargetById(id) {
+            if (id === 'highStake') return ladder.highStake;
+            else if (id.startsWith('stake')) return stakes[parseInt(id.slice(5))];
+            else if (id.startsWith('mg')) return mobileGoals[parseInt(id.slice(2))];
+        }
+
+        function setOrAddRing(targetId, color) {
+            let target = getTargetById(targetId);
+            if (target.maxRings === 1) {
+                target.ringColors = [color];
+            } else if (target.ringColors.length < target.maxRings) {
+                target.ringColors.push(color);
+            }
+        }
+
+        function removeRing(targetId) {
+            let target = getTargetById(targetId);
+            if (target && target.ringColors.length > 0) {
+                target.ringColors.pop();
+            }
+        }
+
+        function setClimbLevel(robotIndex, level) {
+            robots[robotIndex].climbLevel = level;
+            robots[robotIndex].hanging = null;
+        }
+
+        function setHang(robotIndex, location) {
+            robots[robotIndex].hanging = location;
+            robots[robotIndex].climbLevel = 0;
+        }
+
+        function resetSimulation() {
+            const teamNumbers = robots.map(robot => robot.teamNumber);
+
+            robots[0].x = 30;
+            robots[0].y = 30;
+            robots[0].climbLevel = 0;
+            robots[0].hanging = null;
+            robots[1].x = 30;
+            robots[1].y = FIELD_SIZE - 120;
+            robots[1].climbLevel = 0;
+            robots[1].hanging = null;
+            robots[2].x = FIELD_SIZE - 120;
+            robots[2].y = 30;
+            robots[2].climbLevel = 0;
+            robots[2].hanging = null;
+            robots[3].x = FIELD_SIZE - 120;
+            robots[3].y = FIELD_SIZE - 120;
+            robots[3].climbLevel = 0;
+            robots[3].hanging = null;
+
+            robots.forEach((robot, index) => {
+                robot.teamNumber = teamNumbers[index];
+            });
+
+            mobileGoals[0].x = 480;
+            mobileGoals[0].y = 235;
+            mobileGoals[0].ringColors = [];
+            mobileGoals[1].x = 360;
+            mobileGoals[1].y = 595;
+            mobileGoals[1].ringColors = [];
+            mobileGoals[2].x = 240;
+            mobileGoals[2].y = 235;
+            mobileGoals[2].ringColors = [];
+            mobileGoals[3].x = 480;
+            mobileGoals[3].y = 475;
+            mobileGoals[3].ringColors = [];
+            mobileGoals[4].x = 240;
+            mobileGoals[4].y = 475;
+            mobileGoals[4].ringColors = [];
+
+            stakes.forEach(stake => stake.ringColors = []);
+            ladder.highStake.ringColors = [];
+        }
+
+        document.getElementById('reset-button').addEventListener('click', resetSimulation);
+
+        document.getElementById('show-tutorial').addEventListener('click', () => {
+            document.getElementById('tutorial-modal').style.display = 'flex';
+        });
+
+        function closeTutorial() {
+            document.getElementById('tutorial-modal').style.display = 'none';
+        }
+
+        function gameLoop() {
+            drawField();
+            drawObjects();
+            calculateScore();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
