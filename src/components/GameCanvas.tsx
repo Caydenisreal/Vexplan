@@ -13,11 +13,22 @@ import {
 import DrawingSidebar, { LineStyle, LineEndStyle } from './Sidebar';
 import ThemeToggle from './ThemeToggle';
 import { useTheme } from '@/contexts/ThemeContext';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription,
+  DialogFooter,
+  DialogClose
+} from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Button } from "./ui/button";
 
 // Constants for the coordinate system
 const FIELD_SIZE_INCHES = 144; // 144 inches
 const HANG_LADDER_SIZE_INCHES = 48; // 48 inches
-const MOBILE_GOAL_SIZE_INCHES = 10; // 15 inches
+const MOBILE_GOAL_SIZE_INCHES = 10; // 10 inches
 const STAKE_SIZE_INCHES = 10; // Size for stakes
 
 // Define fixed stake positions (in inches from center)
@@ -25,7 +36,24 @@ const STAKES = [
   { id: 'wallStake1', type: 'wall', x: -0.5, y: 69.5 },
   { id: 'wallStake2', type: 'wall', x: -0.5, y: -69 },
   { id: 'redStake', type: 'red', x: -70, y: 0 },
-  { id: 'blueStake', type: 'blue', x: 69.5, y: 0 },
+  { id: 'blueStake', type: 'blue', x: 69, y: 0 },
+];
+
+// Define initial square positions (18x18 inch squares)
+const INITIAL_SQUARES = [
+  { id: 'redSquare1', type: 'red', x: 10, y: 20, size: 18, teamNumber: '' },
+  { id: 'redSquare2', type: 'red', x: 10, y: 105, size: 18, teamNumber: '' },
+  { id: 'blueSquare1', type: 'blue', x: 115, y: 20, size: 18, teamNumber: '' },
+  { id: 'blueSquare2', type: 'blue', x: 115, y: 105, size: 18, teamNumber: '' },
+];
+
+// Define initial mobile goal positions
+const INITIAL_MOBILE_GOALS = [
+  { id: 'mobileGoal-1', x: -24, y: 24 },
+  { id: 'mobileGoal-2', x: 24, y: 24 },
+  { id: 'mobileGoal-3', x: 24, y: -24 },
+  { id: 'mobileGoal-4', x: -24, y: -24 },
+  { id: 'mobileGoal-5', x: -0.5, y: -48 }
 ];
 
 // Constants for arrow direction smoothing
@@ -49,15 +77,6 @@ interface DraggableGoalProps {
   isDrawMode: boolean;
   scale: number;
 }
-
-// Starting positions in inches
-const STARTING_POSITIONS = [
-  { x: -24, y: 24 },
-  { x: 24, y: 24 },
-  { x: 24, y: -24 },
-  { x: -24, y: -24 },
-  { x: -0.5, y: -48 }
-];
 
 const DraggableGoal: React.FC<DraggableGoalProps> = ({ id, initialPosition, isDrawMode, scale }) => {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
@@ -102,8 +121,75 @@ const DraggableGoal: React.FC<DraggableGoalProps> = ({ id, initialPosition, isDr
   );
 };
 
+interface TeamSquareProps {
+  id: string;
+  type: 'red' | 'blue';
+  x: number;
+  y: number;
+  size: number;
+  teamNumber: string;
+  scale: number;
+  onClick: () => void;
+}
+
+function TeamSquare({ id, type, x, y, size, teamNumber, scale, onClick }: TeamSquareProps) {
+  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+    id,
+  });
+
+  const { isDarkMode } = useTheme();
+  
+  const style = transform ? {
+    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+  } : undefined;
+
+  const sizeInPixels = size * scale;
+  
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        ...style,
+        position: 'absolute',
+        left: `${x * scale}px`,
+        top: `${y * scale}px`,
+        width: `${sizeInPixels}px`,
+        height: `${sizeInPixels}px`,
+        backgroundColor: type === 'red' ? 'rgba(255, 0, 0, 0.5)' : 'rgba(0, 0, 255, 0.5)',
+        border: `2px solid ${type === 'red' ? 'red' : 'blue'}`,
+        borderRadius: '4px',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        cursor: 'move',
+        userSelect: 'none',
+        zIndex: 10,
+      }}
+      {...listeners}
+      {...attributes}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {teamNumber && (
+        <span
+          style={{
+            color: isDarkMode ? 'white' : 'black',
+            fontWeight: 'bold',
+            fontSize: `${Math.max(12, sizeInPixels / 4)}px`,
+            textShadow: isDarkMode ? '0 0 2px black' : '0 0 2px white',
+          }}
+        >
+          {teamNumber}
+        </span>
+      )}
+    </div>
+  );
+}
+
 const GameCanvas: React.FC = () => {
-  const [mobileGoals, setMobileGoals] = useState<Array<{ id: string; x: number; y: number }>>([]);
+  const [mobileGoals, setMobileGoals] = useState<Array<{ id: string; x: number; y: number }>>(INITIAL_MOBILE_GOALS);
   const [lines, setLines] = useState<Line[]>([]);
   const [drawingSettings, setDrawingSettings] = useState({
     isDrawMode: false,
@@ -144,17 +230,6 @@ const GameCanvas: React.FC = () => {
       distance: isMobile ? 5 : 8, // Reduced activation distance for mobile
     },
   }));
-
-  // Initialize mobile goals
-  useEffect(() => {
-    setMobileGoals(
-      STARTING_POSITIONS.map((pos, index) => ({
-        id: `goal-${index + 1}`,
-        x: pos.x,
-        y: pos.y,
-      }))
-    );
-  }, []);
 
   // Function to draw an arrow at the end of a line
   const drawArrow = useCallback((
@@ -526,24 +601,37 @@ const GameCanvas: React.FC = () => {
   }, [redrawCanvas]);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
-    if (drawingSettings.isDrawMode) return;
-
     const { active, delta } = event;
-
-    setMobileGoals(goals => 
-      goals.map(goal => {
-        if (goal.id === active.id) {
-          return {
-            ...goal,
-            // Convert pixel deltas back to inch coordinates
-            x: goal.x + (delta.x / scale),
-            y: goal.y - (delta.y / scale), // Invert Y since screen coordinates are inverted
-          };
-        }
-        return goal;
-      })
-    );
-  }, [drawingSettings.isDrawMode, scale]);
+    const id = active.id as string;
+    
+    if (id.includes('mobileGoal')) {
+      setMobileGoals((prevGoals) => {
+        return prevGoals.map((goal) => {
+          if (goal.id === id) {
+            return {
+              ...goal,
+              x: goal.x + delta.x / scale,
+              y: goal.y + delta.y / scale,
+            };
+          }
+          return goal;
+        });
+      });
+    } else if (id.includes('Square')) {
+      setSquares((prevSquares) => {
+        return prevSquares.map((square) => {
+          if (square.id === id) {
+            return {
+              ...square,
+              x: square.x + delta.x / scale,
+              y: square.y + delta.y / scale,
+            };
+          }
+          return square;
+        });
+      });
+    }
+  }, [scale]);
 
   // Function to clear all drawings from the canvas
   const handleClearCanvas = useCallback(() => {
@@ -561,8 +649,33 @@ const GameCanvas: React.FC = () => {
     }, 0);
   }, [redrawCanvas]);
 
+  const [squares, setSquares] = useState(INITIAL_SQUARES);
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [teamNumberDialogOpen, setTeamNumberDialogOpen] = useState(false);
+  const [teamNumberInput, setTeamNumberInput] = useState('');
+
+  const handleSquareClick = (id: string) => {
+    setSelectedSquare(id);
+    const square = squares.find(s => s.id === id);
+    if (square) {
+      setTeamNumberInput(square.teamNumber);
+      setTeamNumberDialogOpen(true);
+    }
+  };
+
+  const saveTeamNumber = () => {
+    if (selectedSquare) {
+      setSquares(prev => prev.map(square => 
+        square.id === selectedSquare 
+          ? { ...square, teamNumber: teamNumberInput } 
+          : square
+      ));
+      setTeamNumberDialogOpen(false);
+    }
+  };
+
   return (
-    <>
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd} id="main-dnd-context">
       <DrawingSidebar 
         settings={drawingSettings}
         onSettingsChange={(newSettings) => 
@@ -578,7 +691,7 @@ const GameCanvas: React.FC = () => {
         ref={containerRef}
         className={`absolute top-0 left-0 right-0 w-full flex justify-center items-center ${isDarkMode ? 'dark' : ''}`} 
         style={{
-          marginTop: isMobile ? '32px' : '64px',
+          marginTop: isMobile ? '64px' : '128px',
           paddingTop: 0,
           paddingBottom: '32px',
           overflowX: 'hidden',
@@ -623,8 +736,6 @@ const GameCanvas: React.FC = () => {
             }}
           />
 
-          {/* Coordinate system grid lines - REMOVED */}
-          
           {/* Center HangLadder - non-draggable */}
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
             <Image
@@ -637,18 +748,31 @@ const GameCanvas: React.FC = () => {
           </div>
 
           {/* Draggable Mobile Goals - render each one separately */}
-          <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-            {mobileGoals.map((goal) => (
-              <DraggableGoal
-                key={goal.id}
-                id={goal.id}
-                initialPosition={{ x: goal.x, y: goal.y }}
-                isDrawMode={drawingSettings.isDrawMode}
-                scale={scale}
-              />
-            ))}
-          </DndContext>
-
+          {mobileGoals.map((goal) => (
+            <DraggableGoal
+              key={goal.id}
+              id={goal.id}
+              initialPosition={{ x: goal.x, y: goal.y }}
+              isDrawMode={drawingSettings.isDrawMode}
+              scale={scale}
+            />
+          ))}
+          
+          {/* Team Squares */}
+          {squares.map((square) => (
+            <TeamSquare
+              key={square.id}
+              id={square.id}
+              type={square.type as 'red' | 'blue'}
+              x={square.x}
+              y={square.y}
+              size={square.size}
+              teamNumber={square.teamNumber}
+              scale={scale}
+              onClick={() => handleSquareClick(square.id)}
+            />
+          ))}
+          
           {/* Fixed Stakes */}
           {STAKES.map(stake => {
             const stakeSize = STAKE_SIZE_INCHES * scale;
@@ -675,7 +799,35 @@ const GameCanvas: React.FC = () => {
           })}
         </div>
       </div>
-    </>
+      
+      {/* Team Number Dialog */}
+      <Dialog open={teamNumberDialogOpen} onOpenChange={setTeamNumberDialogOpen}>
+        <DialogContent className={`${isDarkMode ? 'bg-[#1a1b26] text-white border-[#292e42]' : 'bg-white'}`}>
+          <DialogHeader>
+            <DialogTitle>Enter Team Number</DialogTitle>
+            <DialogDescription className={isDarkMode ? 'text-gray-300' : ''}>
+              Enter the team number for this square
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={teamNumberInput}
+            onChange={(e) => setTeamNumberInput(e.target.value)}
+            placeholder="Team Number"
+            className={`mt-4 ${isDarkMode ? 'bg-[#24283b] text-white border-[#292e42]' : ''}`}
+          />
+          <DialogFooter className="mt-4">
+            <DialogClose asChild>
+              <Button variant="outline" className={isDarkMode ? 'bg-[#24283b] text-white border-[#292e42] hover:bg-[#292e42]' : ''}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button onClick={saveTeamNumber} className={isDarkMode ? 'bg-[#7aa2f7] text-white hover:bg-[#5d7dcb]' : ''}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </DndContext>
   );
 };
 

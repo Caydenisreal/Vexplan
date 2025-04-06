@@ -102,7 +102,7 @@ export default function DrawingSidebar({ settings, onSettingsChange, onClearCanv
         }`} />
         
         <SidebarHeader className={`px-6 py-3 sticky top-0 z-10 flex justify-between items-center ${
-          isDarkMode ? 'bg-[#1a1b26]' : ''
+          ''
         }`}>
           {!isMobile && (
             <div className="group-data-[state=collapsed]:hidden">
