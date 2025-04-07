@@ -803,7 +803,8 @@ const GameCanvas: React.FC = () => {
       {/* Team Number Dialog */}
       <Dialog open={teamNumberDialogOpen} onOpenChange={setTeamNumberDialogOpen}>
         <DialogContent className={`${isDarkMode ? 'bg-[#1a1b26] text-white border-[#292e42]' : 'bg-white'}`}>
-          <DialogHeader>
+          <div className="h-6"></div>
+          <DialogHeader className="pt-4">
             <DialogTitle>Enter Team Number</DialogTitle>
             <DialogDescription className={isDarkMode ? 'text-gray-300' : ''}>
               Enter the team number for this square
@@ -813,7 +814,7 @@ const GameCanvas: React.FC = () => {
             value={teamNumberInput}
             onChange={(e) => setTeamNumberInput(e.target.value)}
             placeholder="Team Number"
-            className={`mt-4 ${isDarkMode ? 'bg-[#24283b] text-white border-[#292e42]' : ''}`}
+            className={`${isDarkMode ? 'bg-[#24283b] text-white border-[#292e42]' : ''}`}
           />
           <DialogFooter className="mt-4">
             <DialogClose asChild>
