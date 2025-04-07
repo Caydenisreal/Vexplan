@@ -683,6 +683,7 @@ const GameCanvas: React.FC = () => {
         }
         onClearCanvas={handleClearCanvas}
         isMobile={isMobile}
+        squares={squares}
       />
       
       <ThemeToggle />
