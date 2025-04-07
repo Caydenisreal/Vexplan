@@ -161,10 +161,10 @@ export default function DrawingSidebar({ settings, onSettingsChange, onClearCanv
         style={{
           left: isMobile 
             ? activeSidebar !== 'none' 
-              ? '260px' 
+              ? '280px' 
               : '50%'
             : activeSidebar !== 'none' 
-              ? '260px' 
+              ? '310px' 
               : '16px',
           transform: isMobile && activeSidebar === 'none' ? 'translateX(-50%)' : 'none',
           display: 'flex',

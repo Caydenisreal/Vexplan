@@ -9,6 +9,7 @@ import {
   useSensors,
   PointerSensor,
   DragEndEvent,
+  DragStartEvent,
 } from '@dnd-kit/core';
 import DrawingSidebar, { LineStyle, LineEndStyle } from './Sidebar';
 import ThemeToggle from './ThemeToggle';
@@ -40,7 +41,7 @@ const STAKES = [
 ];
 
 // Define initial square positions (18x18 inch squares)
-const INITIAL_SQUARES = [
+const INITIAL_SQUARES: Array<{ id: string; type: 'red' | 'blue'; x: number; y: number; size: number; teamNumber: string }> = [
   { id: 'redSquare1', type: 'red', x: 10, y: 20, size: 18, teamNumber: '' },
   { id: 'redSquare2', type: 'red', x: 10, y: 105, size: 18, teamNumber: '' },
   { id: 'blueSquare1', type: 'blue', x: 115, y: 20, size: 18, teamNumber: '' },
@@ -62,14 +63,16 @@ const MIN_DIRECTION_CHANGE_THRESHOLD = 5; // Minimum pixels to move before direc
 const MIN_DIRECTION_POINTS = 3; // Minimum number of points needed to calculate a direction
 const END_POINTS_TO_IGNORE = 2; // Number of points to ignore at the end when calculating direction
 
-interface Line {
-  points: { x: number; y: number }[];
+// Define types for lines
+type Point = { x: number; y: number };
+type Line = {
+  points: Point[];
   color: string;
   size: number;
   style: LineStyle;
   endStyle: LineEndStyle;
-  direction?: { x: number; y: number }; // Direction vector for arrow
-}
+  direction?: Point;
+};
 
 interface DraggableGoalProps {
   id: string;
@@ -89,24 +92,26 @@ const DraggableGoal: React.FC<DraggableGoalProps> = ({ id, initialPosition, isDr
   const fieldSize = FIELD_SIZE_INCHES * scale;
   const mobileGoalSize = MOBILE_GOAL_SIZE_INCHES * scale;
   
-  const screenX = (initialPosition.x * scale) + (fieldSize / 2);
-  const screenY = (-initialPosition.y * scale) + (fieldSize / 2);
+  // Calculate the center position of the goal
+  const centerX = (initialPosition.x * scale) + (fieldSize / 2);
+  const centerY = (-initialPosition.y * scale) + (fieldSize / 2);
 
-  const style = transform ? {
-    transform: `translate3d(${transform.x + screenX}px, ${transform.y + screenY}px, 0)`,
-    width: `${mobileGoalSize}px`,
-    height: `${mobileGoalSize}px`,
-  } : {
-    transform: `translate3d(${screenX}px, ${screenY}px, 0)`,
-    width: `${mobileGoalSize}px`,
-    height: `${mobileGoalSize}px`,
-  };
+  // Apply transform if available (during drag)
+  const x = transform ? centerX + transform.x : centerX;
+  const y = transform ? centerY + transform.y : centerY;
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
-      className={`absolute touch-none -translate-x-1/2 -translate-y-1/2 ${!isDrawMode ? 'cursor-move' : ''}`}
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: `${mobileGoalSize}px`,
+        height: `${mobileGoalSize}px`,
+        transform: `translate(${x}px, ${y}px) translate(-50%, -50%)`,
+      }}
+      className={`touch-none ${!isDrawMode ? 'cursor-move' : ''}`}
       {...listeners}
       {...attributes}
     >
@@ -139,20 +144,21 @@ function TeamSquare({ id, type, x, y, size, teamNumber, scale, onClick }: TeamSq
 
   const { isDarkMode } = useTheme();
   
-  const style = transform ? {
-    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-  } : undefined;
-
   const sizeInPixels = size * scale;
+  
+  // Convert from game coordinates to screen coordinates
+  // Note: For TeamSquare, the coordinates are already in screen space (top-left origin)
+  // so we don't need to invert Y or adjust for field center
+  const posX = transform ? x * scale + transform.x : x * scale;
+  const posY = transform ? y * scale + transform.y : y * scale;
   
   return (
     <div
       ref={setNodeRef}
       style={{
-        ...style,
         position: 'absolute',
-        left: `${x * scale}px`,
-        top: `${y * scale}px`,
+        left: `${posX}px`,
+        top: `${posY}px`,
         width: `${sizeInPixels}px`,
         height: `${sizeInPixels}px`,
         backgroundColor: type === 'red' ? 'rgba(255, 0, 0, 0.5)' : 'rgba(0, 0, 255, 0.5)',
@@ -164,6 +170,7 @@ function TeamSquare({ id, type, x, y, size, teamNumber, scale, onClick }: TeamSq
         cursor: 'move',
         userSelect: 'none',
         zIndex: 10,
+        touchAction: 'none', // Prevent browser touch actions to improve dragging on mobile
       }}
       {...listeners}
       {...attributes}
@@ -188,8 +195,23 @@ function TeamSquare({ id, type, x, y, size, teamNumber, scale, onClick }: TeamSq
   );
 }
 
+// Define action types for history
+type HistoryAction = 
+  | { type: 'MOVE_GOAL'; id: string; from: { x: number, y: number }; to: { x: number, y: number }; timestamp: number }
+  | { type: 'MOVE_SQUARE'; id: string; from: { x: number, y: number }; to: { x: number, y: number }; timestamp: number }
+  | { type: 'ADD_LINE'; line: Line; timestamp: number }
+  | { type: 'CLEAR_CANVAS'; timestamp: number };
+
+// Define the types for the addToHistory function argument
+type HistoryActionWithoutTimestamp = 
+  | { type: 'MOVE_GOAL'; id: string; from: { x: number, y: number }; to: { x: number, y: number } }
+  | { type: 'MOVE_SQUARE'; id: string; from: { x: number, y: number }; to: { x: number, y: number } }
+  | { type: 'ADD_LINE'; line: Line }
+  | { type: 'CLEAR_CANVAS' };
+
 const GameCanvas: React.FC = () => {
   const [mobileGoals, setMobileGoals] = useState<Array<{ id: string; x: number; y: number }>>(INITIAL_MOBILE_GOALS);
+  const [squares, setSquares] = useState<Array<{ id: string; type: 'red' | 'blue'; x: number; y: number; size: number; teamNumber: string }>>(INITIAL_SQUARES);
   const [lines, setLines] = useState<Line[]>([]);
   const [drawingSettings, setDrawingSettings] = useState({
     isDrawMode: false,
@@ -200,7 +222,43 @@ const GameCanvas: React.FC = () => {
     lineEndStyle: 'none' as LineEndStyle,
   });
   
-  // Get theme information
+  // History state for undo/redo
+  const [history, setHistory] = useState<HistoryAction[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [dragStartPositions, setDragStartPositions] = useState<Record<string, { x: number, y: number }>>({});
+
+  // Function to add a timestamp to drawing actions
+  const addToHistory = useCallback((action: HistoryActionWithoutTimestamp) => {
+    const actionWithTimestamp: HistoryAction = { ...action, timestamp: Date.now() };
+    const newHistory = history.slice(0, historyIndex + 1).concat(actionWithTimestamp);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  }, [history, historyIndex]);
+
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [teamNumberDialogOpen, setTeamNumberDialogOpen] = useState(false);
+  const [teamNumberInput, setTeamNumberInput] = useState('');
+
+  const handleSquareClick = (id: string) => {
+    setSelectedSquare(id);
+    const square = squares.find(s => s.id === id);
+    if (square) {
+      setTeamNumberInput(square.teamNumber);
+      setTeamNumberDialogOpen(true);
+    }
+  };
+
+  const saveTeamNumber = () => {
+    if (selectedSquare) {
+      setSquares(prev => prev.map(square => 
+        square.id === selectedSquare 
+          ? { ...square, teamNumber: teamNumberInput } 
+          : square
+      ));
+      setTeamNumberDialogOpen(false);
+    }
+  };
+
   const { isDarkMode } = useTheme();
   
   // Set default brush color to white since the field background is always dark
@@ -224,6 +282,7 @@ const GameCanvas: React.FC = () => {
   const isDrawingRef = useRef(false);
   const linesRef = useRef<Line[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const currentLineRef = useRef<Line | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: {
@@ -309,7 +368,7 @@ const GameCanvas: React.FC = () => {
       ctx.stroke();
       
       // Draw arrow if needed
-      if (line.endStyle === 'arrow' && line.direction && line.points.length >= 2) {
+      if (line.endStyle === 'arrow' && line.direction) {
         const lastPoint = line.points[line.points.length - 1];
         drawArrow(ctx, lastPoint.x, lastPoint.y, line.direction, line.size, line.color);
       }
@@ -463,29 +522,22 @@ const GameCanvas: React.FC = () => {
   }, [calculateDirection]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (!canvasRef.current || !drawingSettings.isDrawMode) return;
+    if (!drawingSettings.isDrawMode || !canvasRef.current) return;
     
-    // Get canvas position relative to the viewport
     const rect = canvasRef.current.getBoundingClientRect();
-    
-    // Calculate point coordinates relative to the canvas
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    // Store the point
+    isDrawingRef.current = true;
     const point = { x, y };
     lastPointRef.current = point;
     directionSamplePointsRef.current = [point];
     
     if (drawingSettings.isEraser) {
       // Handle eraser mode
-      isDrawingRef.current = true;
       eraseAtPoint(point);
     } else {
       // Handle drawing mode
-      isDrawingRef.current = true;
-      
-      // Start a new line
       const newLine: Line = {
         points: [point],
         color: drawingSettings.brushColor,
@@ -493,6 +545,9 @@ const GameCanvas: React.FC = () => {
         style: drawingSettings.lineStyle,
         endStyle: drawingSettings.lineEndStyle,
       };
+      
+      // Store the current line reference for use in handlePointerUp
+      currentLineRef.current = newLine;
       
       setLines(prevLines => [...prevLines, newLine]);
     }
@@ -502,12 +557,9 @@ const GameCanvas: React.FC = () => {
   }, [drawingSettings, eraseAtPoint]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDrawingRef.current || !canvasRef.current || !canvasCtxRef.current) return;
+    if (!isDrawingRef.current || !canvasRef.current || !lastPointRef.current) return;
     
-    // Get canvas position relative to the viewport
     const rect = canvasRef.current.getBoundingClientRect();
-    
-    // Calculate point coordinates relative to the canvas
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
@@ -519,9 +571,8 @@ const GameCanvas: React.FC = () => {
     if (drawingSettings.isEraser) {
       // Handle eraser mode
       eraseAtPoint(newPoint);
-    } else if (lastPointRef.current) {
+    } else {
       // Handle drawing mode
-      // Add point to the current line
       setLines(prevLines => {
         const updatedLines = [...prevLines];
         const currentLine = updatedLines[updatedLines.length - 1];
@@ -558,30 +609,31 @@ const GameCanvas: React.FC = () => {
       
       // Draw the line segment on the canvas
       const ctx = canvasCtxRef.current;
-      
-      ctx.save();
-      ctx.strokeStyle = drawingSettings.brushColor;
-      ctx.lineWidth = drawingSettings.brushSize;
-      
-      // Apply line style
-      if (drawingSettings.lineStyle === 'dotted') {
-        ctx.setLineDash([drawingSettings.brushSize, drawingSettings.brushSize * 2]);
-      } else if (drawingSettings.lineStyle === 'dashed') {
-        ctx.setLineDash([drawingSettings.brushSize * 3, drawingSettings.brushSize * 2]);
-      } else {
+      if (ctx) {
+        ctx.save();
+        ctx.strokeStyle = drawingSettings.brushColor;
+        ctx.lineWidth = drawingSettings.brushSize;
+        
+        // Apply line style
+        if (drawingSettings.lineStyle === 'dotted') {
+          ctx.setLineDash([drawingSettings.brushSize, drawingSettings.brushSize * 2]);
+        } else if (drawingSettings.lineStyle === 'dashed') {
+          ctx.setLineDash([drawingSettings.brushSize * 3, drawingSettings.brushSize * 2]);
+        } else {
+          ctx.setLineDash([]);
+        }
+        
+        ctx.beginPath();
+        ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+        ctx.lineTo(newPoint.x, newPoint.y);
+        ctx.stroke();
+        
+        // Reset line dash
         ctx.setLineDash([]);
+        
+        // Restore the context state
+        ctx.restore();
       }
-      
-      ctx.beginPath();
-      ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
-      ctx.lineTo(newPoint.x, newPoint.y);
-      ctx.stroke();
-      
-      // Reset line dash
-      ctx.setLineDash([]);
-      
-      // Restore the context state
-      ctx.restore();
       
       lastPointRef.current = newPoint;
     }
@@ -591,14 +643,69 @@ const GameCanvas: React.FC = () => {
   }, [calculateDistance, calculateSmoothedDirection, drawingSettings, eraseAtPoint, smoothDirection]);
 
   const handlePointerUp = useCallback(() => {
+    if (!isDrawingRef.current) return;
+    
+    // Only add the line if it has more than one point and we're not in eraser mode
+    if (!drawingSettings.isEraser && lines.length > 0) {
+      const currentLine = lines[lines.length - 1];
+      
+      if (currentLine && currentLine.points.length > 1) {
+        // Calculate direction for arrow if needed
+        let direction: Point | undefined = undefined;
+        if (currentLine.endStyle === 'arrow') {
+          const calculatedDirection = calculateSmoothedDirection(directionSamplePointsRef.current);
+          if (calculatedDirection) {
+            direction = calculatedDirection;
+          }
+        }
+        
+        // Create a final version of the line with the direction
+        const finalLine: Line = { 
+          ...currentLine,
+          direction
+        };
+        
+        // Update the line in the lines array
+        setLines(prevLines => {
+          const updatedLines = [...prevLines];
+          updatedLines[updatedLines.length - 1] = finalLine;
+          return updatedLines;
+        });
+        
+        // Add to history
+        addToHistory({
+          type: 'ADD_LINE',
+          line: finalLine
+        });
+      }
+    }
+    
     isDrawingRef.current = false;
     lastPointRef.current = null;
     lastDirectionUpdatePointRef.current = null;
     directionSamplePointsRef.current = [];
 
-    // Force a complete redraw to ensure all lines are visible
+    // Force immediate canvas redraw
     setTimeout(() => redrawCanvas(), 0);
-  }, [redrawCanvas]);
+  }, [calculateSmoothedDirection, addToHistory, lines, drawingSettings.isEraser, redrawCanvas]);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const { active } = event;
+    const id = active.id as string;
+    
+    // Store the starting position for history
+    if (id.includes('mobileGoal')) {
+      const goal = mobileGoals.find(g => g.id === id);
+      if (goal) {
+        setDragStartPositions(prev => ({ ...prev, [id]: { x: goal.x, y: goal.y } }));
+      }
+    } else if (id.includes('Square')) {
+      const square = squares.find(s => s.id === id);
+      if (square) {
+        setDragStartPositions(prev => ({ ...prev, [id]: { x: square.x, y: square.y } }));
+      }
+    }
+  }, [mobileGoals, squares]);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, delta } = event;
@@ -606,76 +713,280 @@ const GameCanvas: React.FC = () => {
     
     if (id.includes('mobileGoal')) {
       setMobileGoals((prevGoals) => {
-        return prevGoals.map((goal) => {
+        const updatedGoals = prevGoals.map((goal) => {
           if (goal.id === id) {
+            // Convert delta from screen pixels to game coordinates
+            // Note: Y is inverted in screen coordinates, so we negate delta.y
             return {
               ...goal,
               x: goal.x + delta.x / scale,
-              y: goal.y + delta.y / scale,
+              y: goal.y - delta.y / scale, // Negate delta.y to convert from screen to game coordinates
             };
           }
           return goal;
         });
+        
+        // Record the action in history
+        const startPos = dragStartPositions[id];
+        const endPos = updatedGoals.find(g => g.id === id);
+        
+        if (startPos && endPos && (Math.abs(startPos.x - endPos.x) > 0.1 || Math.abs(startPos.y - endPos.y) > 0.1)) {
+          // Only record if there was actual movement (with a small threshold to avoid tiny movements)
+          addToHistory({
+            type: 'MOVE_GOAL',
+            id,
+            from: { ...startPos }, // Create a copy to avoid reference issues
+            to: { x: endPos.x, y: endPos.y }
+          });
+        }
+        
+        return updatedGoals;
       });
     } else if (id.includes('Square')) {
       setSquares((prevSquares) => {
-        return prevSquares.map((square) => {
+        const updatedSquares = prevSquares.map((square) => {
           if (square.id === id) {
+            // For squares, we don't need to negate delta.y because they use screen coordinates
+            // where Y increases downward, which matches the delta.y direction
             return {
               ...square,
               x: square.x + delta.x / scale,
-              y: square.y + delta.y / scale,
+              y: square.y + delta.y / scale, // Don't negate for screen coordinates
             };
           }
           return square;
         });
+        
+        // Record the action in history
+        const startPos = dragStartPositions[id];
+        const endPos = updatedSquares.find(s => s.id === id);
+        
+        if (startPos && endPos && (Math.abs(startPos.x - endPos.x) > 0.1 || Math.abs(startPos.y - endPos.y) > 0.1)) {
+          // Only record if there was actual movement (with a small threshold to avoid tiny movements)
+          addToHistory({
+            type: 'MOVE_SQUARE',
+            id,
+            from: { ...startPos }, // Create a copy to avoid reference issues
+            to: { x: endPos.x, y: endPos.y }
+          });
+        }
+        
+        return updatedSquares;
       });
     }
-  }, [scale]);
+  }, [scale, dragStartPositions, addToHistory]);
 
   // Function to clear all drawings from the canvas
   const handleClearCanvas = useCallback(() => {
+    // Add current lines to history before clearing
+    if (lines.length > 0) {
+      addToHistory({
+        type: 'CLEAR_CANVAS'
+      });
+    }
+    
     setLines([]);
-    // Update the lines reference immediately
-    linesRef.current = [];
-    // Force immediate canvas redraw
-    setTimeout(() => {
-      if (canvasRef.current && canvasCtxRef.current) {
-        const ctx = canvasCtxRef.current;
-        const canvas = canvasRef.current;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        redrawCanvas();
+    
+    if (canvasRef.current && canvasCtxRef.current) {
+      canvasCtxRef.current.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    }
+  }, [lines, addToHistory]);
+
+  const handleUndoInDrawMode = useCallback(() => {
+    if (historyIndex >= 0) {
+      // Find the most recent drawing-related action
+      let currentIndex = historyIndex;
+      let foundDrawingAction = false;
+      
+      while (currentIndex >= 0 && !foundDrawingAction) {
+        const action = history[currentIndex];
+        if (action.type === 'ADD_LINE' || action.type === 'CLEAR_CANVAS') {
+          foundDrawingAction = true;
+          
+          // Handle the drawing action
+          if (action.type === 'ADD_LINE') {
+            // Remove the line from the lines array
+            setLines(prevLines => {
+              const lineToRemove = action.line;
+              return prevLines.filter(line => {
+                // Compare by reference or by checking all properties
+                return line !== lineToRemove && 
+                       !(line.points.length === lineToRemove.points.length && 
+                         line.color === lineToRemove.color &&
+                         line.size === lineToRemove.size &&
+                         line.style === lineToRemove.style);
+              });
+            });
+          } else if (action.type === 'CLEAR_CANVAS') {
+            // This is a special case - we need to restore the lines from before the clear
+            if (currentIndex > 0) {
+              // Find all lines that were added before this clear action
+              const linesBeforeClear = history
+                .slice(0, currentIndex)
+                .filter(h => h.type === 'ADD_LINE')
+                .map(h => (h as { type: 'ADD_LINE', line: Line, timestamp: number }).line);
+              
+              setLines(linesBeforeClear);
+            }
+          }
+          
+          // Mark this action as "skipped" for undo by setting a temporary index
+          setHistoryIndex(currentIndex - 1);
+          
+          // Force a redraw of the canvas
+          setTimeout(() => redrawCanvas(), 0);
+          return;
+        }
+        
+        currentIndex--;
       }
-    }, 0);
-  }, [redrawCanvas]);
-
-  const [squares, setSquares] = useState(INITIAL_SQUARES);
-  const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
-  const [teamNumberDialogOpen, setTeamNumberDialogOpen] = useState(false);
-  const [teamNumberInput, setTeamNumberInput] = useState('');
-
-  const handleSquareClick = (id: string) => {
-    setSelectedSquare(id);
-    const square = squares.find(s => s.id === id);
-    if (square) {
-      setTeamNumberInput(square.teamNumber);
-      setTeamNumberDialogOpen(true);
     }
-  };
+  }, [history, historyIndex, redrawCanvas]);
 
-  const saveTeamNumber = () => {
-    if (selectedSquare) {
-      setSquares(prev => prev.map(square => 
-        square.id === selectedSquare 
-          ? { ...square, teamNumber: teamNumberInput } 
-          : square
-      ));
-      setTeamNumberDialogOpen(false);
+  const handleRedoInDrawMode = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      // Find the next drawing-related action
+      let currentIndex = historyIndex + 1;
+      let foundDrawingAction = false;
+      
+      while (currentIndex < history.length && !foundDrawingAction) {
+        const action = history[currentIndex];
+        if (action.type === 'ADD_LINE' || action.type === 'CLEAR_CANVAS') {
+          foundDrawingAction = true;
+          
+          // Handle the drawing action
+          if (action.type === 'ADD_LINE') {
+            // Add the line back to the lines array
+            setLines(prevLines => [...prevLines, action.line]);
+          } else if (action.type === 'CLEAR_CANVAS') {
+            // Clear all lines
+            setLines([]);
+          }
+          
+          // Mark this action as "done" for redo
+          setHistoryIndex(currentIndex);
+          
+          // Force a redraw of the canvas
+          setTimeout(() => redrawCanvas(), 0);
+          return;
+        }
+        
+        currentIndex++;
+      }
     }
-  };
+  }, [history, historyIndex, redrawCanvas]);
+
+  const handleUndoInObjectMode = useCallback(() => {
+    if (historyIndex >= 0) {
+      // Find the most recent object-related action
+      let currentIndex = historyIndex;
+      let foundObjectAction = false;
+      
+      while (currentIndex >= 0 && !foundObjectAction) {
+        const action = history[currentIndex];
+        if (action.type === 'MOVE_GOAL' || action.type === 'MOVE_SQUARE') {
+          foundObjectAction = true;
+          
+          // Handle the object action
+          if (action.type === 'MOVE_GOAL') {
+            setMobileGoals(prevGoals => prevGoals.map(goal => 
+              goal.id === action.id ? { ...goal, x: action.from.x, y: action.from.y } : goal
+            ));
+          } else if (action.type === 'MOVE_SQUARE') {
+            setSquares(prevSquares => prevSquares.map(square => 
+              square.id === action.id ? { ...square, x: action.from.x, y: action.from.y } : square
+            ));
+          }
+          
+          // Mark this action as "skipped" for undo
+          setHistoryIndex(currentIndex - 1);
+        }
+        
+        currentIndex--;
+      }
+    }
+  }, [history, historyIndex]);
+
+  const handleRedoInObjectMode = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      // Find the next object-related action
+      let currentIndex = historyIndex + 1;
+      let foundObjectAction = false;
+      
+      while (currentIndex < history.length && !foundObjectAction) {
+        const action = history[currentIndex];
+        if (action.type === 'MOVE_GOAL' || action.type === 'MOVE_SQUARE') {
+          foundObjectAction = true;
+          
+          // Handle the object action
+          if (action.type === 'MOVE_GOAL') {
+            setMobileGoals(prevGoals => prevGoals.map(goal => 
+              goal.id === action.id ? { ...goal, x: action.to.x, y: action.to.y } : goal
+            ));
+          } else if (action.type === 'MOVE_SQUARE') {
+            setSquares(prevSquares => prevSquares.map(square => 
+              square.id === action.id ? { ...square, x: action.to.x, y: action.to.y } : square
+            ));
+          }
+          
+          // Mark this action as "done" for redo
+          setHistoryIndex(currentIndex);
+        }
+        
+        currentIndex++;
+      }
+    }
+  }, [history, historyIndex]);
+
+  const handleUndo = useCallback(() => {
+    if (drawingSettings.isDrawMode) {
+      handleUndoInDrawMode();
+    } else {
+      handleUndoInObjectMode();
+    }
+  }, [drawingSettings.isDrawMode, handleUndoInDrawMode, handleUndoInObjectMode]);
+
+  const handleRedo = useCallback(() => {
+    if (drawingSettings.isDrawMode) {
+      handleRedoInDrawMode();
+    } else {
+      handleRedoInObjectMode();
+    }
+  }, [drawingSettings.isDrawMode, handleRedoInDrawMode, handleRedoInObjectMode]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if it's a Mac (Command key) or Windows/Linux (Control key)
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      
+      if ((isMac && e.metaKey) || (!isMac && e.ctrlKey)) {
+        // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
+        if (e.key === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          handleUndo();
+        }
+        // Redo: Cmd+Shift+Z (Mac) or Ctrl+Y (Windows/Linux)
+        else if ((isMac && e.key === 'z' && e.shiftKey) || (!isMac && e.key === 'y')) {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleUndo, handleRedo]);
 
   return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd} id="main-dnd-context">
+    <DndContext 
+      sensors={sensors} 
+      onDragEnd={handleDragEnd} 
+      onDragStart={handleDragStart}
+      id="main-dnd-context"
+    >
       <DrawingSidebar 
         settings={drawingSettings}
         onSettingsChange={(newSettings) => 
@@ -692,7 +1003,7 @@ const GameCanvas: React.FC = () => {
         ref={containerRef}
         className={`absolute top-0 left-0 right-0 w-full flex justify-center items-center ${isDarkMode ? 'dark' : ''}`} 
         style={{
-          marginTop: isMobile ? '64px' : '128px',
+          marginTop: isMobile ? '128px' : '64px',
           paddingTop: 0,
           paddingBottom: '32px',
           overflowX: 'hidden',
@@ -715,7 +1026,17 @@ const GameCanvas: React.FC = () => {
         >
           {/* Drawing canvas */}
           <canvas
-            ref={canvasRef}
+            ref={(el) => {
+              // Set the canvas ref
+              canvasRef.current = el;
+              
+              if (el) {
+                // Add non-passive touch event listener to allow preventDefault
+                el.addEventListener('touchstart', (e) => {
+                  e.preventDefault();
+                }, { passive: false });
+              }
+            }}
             className="absolute top-0 left-0 z-10 touch-none"
             style={{
               cursor: drawingSettings.isDrawMode 
@@ -731,10 +1052,6 @@ const GameCanvas: React.FC = () => {
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
-            onTouchStart={(e) => {
-              // Prevent default touch behavior to avoid scrolling
-              e.preventDefault();
-            }}
           />
 
           {/* Center HangLadder - non-draggable */}
@@ -764,7 +1081,7 @@ const GameCanvas: React.FC = () => {
             <TeamSquare
               key={square.id}
               id={square.id}
-              type={square.type as 'red' | 'blue'}
+              type={square.type}
               x={square.x}
               y={square.y}
               size={square.size}
