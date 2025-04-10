@@ -1,326 +1,61 @@
 "use client";
 
-import * as React from "react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
 import {
   DndContext,
-  useDraggable,
   useSensor,
   useSensors,
   PointerSensor,
   DragEndEvent,
   DragStartEvent,
+  DragMoveEvent,
+  Modifier,
+  MeasuringStrategy
 } from "@dnd-kit/core";
-import DrawingSidebar, { LineStyle, LineEndStyle } from "./Sidebar";
+import DrawingSidebar from "./Sidebar";
 import ThemeToggle from "./ThemeToggle";
 import { useTheme } from "@/contexts/ThemeContext";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogClose,
-} from "./ui/dialog";
-import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { X } from "lucide-react";
 
-// Constants for the coordinate system
-const FIELD_SIZE_INCHES = 144; // 144 inches
-const HANG_LADDER_SIZE_INCHES = 48; // 48 inches
-const MOBILE_GOAL_SIZE_INCHES = 10; // 10 inches
-const STAKE_SIZE_INCHES = 10; // Size for stakes
+// Import components that were extracted
+import TeamSquare from "./TeamSquare";
+import DraggableGoal from "./DraggableGoal";
+import MobileGoalPopup from "./popups/MobileGoalPopup";
+import WallStakePopup from "./popups/WallStakePopup";
+import TeamStakePopup from "./popups/TeamStakePopup";
+import TeamNumberDialog from "./popups/TeamNumberDialog";
+import HighStakePopup from "./popups/HighStakePopup"; // Import the new HighStakePopup component
+import HangPopup from "./popups/HangPopup"; // Import the new HangPopup component
 
-// Define fixed stake positions (in inches from center)
-const STAKES = [
-  { id: "wallStake1", type: "wall", x: -0.5, y: 69.5 },
-  { id: "wallStake2", type: "wall", x: -0.5, y: -69 },
-  { id: "redStake", type: "red", x: -70, y: 0 },
-  { id: "blueStake", type: "blue", x: 69, y: 0 },
-];
+// Import types and constants from new files
+import {
+  Point,
+  Line,
+  LineStyle,
+  MobileGoal,
+  WallStake,
+  TeamStake,
+  HangScore,
+  HistoryAction,
+} from "./types/gameTypes";
 
-// Define initial square positions (18x18 inch squares)
-const INITIAL_SQUARES: Array<{
-  id: string;
-  type: "red" | "blue";
-  x: number;
-  y: number;
-  size: number;
-  teamNumber: string;
-}> = [
-  { id: "redSquare1", type: "red", x: 10, y: 20, size: 18, teamNumber: "" },
-  { id: "redSquare2", type: "red", x: 10, y: 105, size: 18, teamNumber: "" },
-  { id: "blueSquare1", type: "blue", x: 115, y: 20, size: 18, teamNumber: "" },
-  { id: "blueSquare2", type: "blue", x: 115, y: 105, size: 18, teamNumber: "" },
-];
-
-// Define initial mobile goal positions
-const INITIAL_MOBILE_GOALS = [
-  { id: "mobileGoal-1", x: -24, y: 24, rings: [] },
-  { id: "mobileGoal-2", x: 24, y: 24, rings: [] },
-  { id: "mobileGoal-3", x: 24, y: -24, rings: [] },
-  { id: "mobileGoal-4", x: -24, y: -24, rings: [] },
-  { id: "mobileGoal-5", x: -0.5, y: -48, rings: [] },
-];
-
-// Define initial wall stakes with rings
-const INITIAL_WALL_STAKES = [
-  { id: "wallStake1", rings: [] },
-  { id: "wallStake2", rings: [] },
-];
-
-// Define initial team stakes with rings
-const INITIAL_TEAM_STAKES = [
-  { id: "redStake", rings: [] },
-  { id: "blueStake", rings: [] },
-];
-
-// Constants for arrow direction smoothing
-const DIRECTION_SMOOTHING_FACTOR = 0.3; // Lower = smoother (0-1)
-const MIN_DIRECTION_CHANGE_THRESHOLD = 5; // Minimum pixels to move before direction changes
-const MIN_DIRECTION_POINTS = 3; // Minimum number of points needed to calculate a direction
-const END_POINTS_TO_IGNORE = 2; // Number of points to ignore at the end when calculating direction
-
-// Define types for lines
-type Point = { x: number; y: number };
-type Line = {
-  points: Point[];
-  color: string;
-  size: number;
-  style: LineStyle;
-  endStyle: LineEndStyle;
-  direction?: Point;
-};
-
-interface TeamSquareProps {
-  id: string;
-  type: "red" | "blue";
-  x: number;
-  y: number;
-  size: number;
-  teamNumber: string;
-  scale: number;
-  onClick: () => void;
-}
-
-function TeamSquare({
-  id,
-  type,
-  x,
-  y,
-  size,
-  teamNumber,
-  scale,
-  onClick,
-}: TeamSquareProps) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
-    id,
-  });
-
-  const { isDarkMode } = useTheme();
-
-  const sizeInPixels = size * scale;
-
-  // Convert from game coordinates to screen coordinates
-  // Note: For TeamSquare, the coordinates are already in screen space (top-left origin)
-  // so we don't need to invert Y or adjust for field center
-  const posX = transform ? x * scale + transform.x : x * scale;
-  const posY = transform ? y * scale + transform.y : y * scale;
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        position: "absolute",
-        left: `${posX}px`,
-        top: `${posY}px`,
-        width: `${sizeInPixels}px`,
-        height: `${sizeInPixels}px`,
-        backgroundColor:
-          type === "red" ? "rgba(255, 0, 0, 0.5)" : "rgba(0, 0, 255, 0.5)",
-        border: `2px solid ${type === "red" ? "red" : "blue"}`,
-        borderRadius: "4px",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        cursor: "move",
-        userSelect: "none",
-        zIndex: 10,
-        touchAction: "none", // Prevent browser touch actions to improve dragging on mobile
-      }}
-      {...listeners}
-      {...attributes}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-    >
-      {teamNumber && (
-        <span
-          style={{
-            color: isDarkMode ? "white" : "black",
-            fontWeight: "bold",
-            fontSize: `${Math.max(12, sizeInPixels / 4)}px`,
-            textShadow: isDarkMode ? "0 0 2px black" : "0 0 2px white",
-          }}
-        >
-          {teamNumber}
-        </span>
-      )}
-    </div>
-  );
-}
-
-interface DraggableGoalProps {
-  id: string;
-  initialPosition: { x: number; y: number };
-  isDrawMode: boolean;
-  scale: number;
-  onGoalClick: (id: string) => void;
-}
-
-const DraggableGoal: React.FC<DraggableGoalProps> = ({
-  id,
-  initialPosition,
-  isDrawMode,
-  scale,
-  onGoalClick,
-}) => {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
-    id: id,
-    disabled: isDrawMode,
-  });
-
-  // Convert from game coordinates (inches) to screen coordinates (pixels)
-  // Note: Y is inverted in screen coordinates, so we negate delta.y
-  const fieldSize = FIELD_SIZE_INCHES * scale;
-  const mobileGoalSize = MOBILE_GOAL_SIZE_INCHES * scale;
-
-  // Calculate the center position of the goal
-  const centerX = initialPosition.x * scale + fieldSize / 2;
-  const centerY = -initialPosition.y * scale + fieldSize / 2;
-
-  // Apply transform if available (during drag)
-  const x = transform ? centerX + transform.x : centerX;
-  const y = transform ? centerY + transform.y : centerY;
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        position: "absolute",
-        left: 0,
-        top: 0,
-        width: `${mobileGoalSize}px`,
-        height: `${mobileGoalSize}px`,
-        transform: `translate(${x}px, ${y}px) translate(-50%, -50%)`,
-      }}
-      className={`touch-none ${!isDrawMode ? "cursor-move" : ""}`}
-      {...listeners}
-      {...attributes}
-      onClick={(e) => {
-        if (!isDrawMode) {
-          e.stopPropagation();
-          onGoalClick(id);
-        }
-      }}
-    >
-      <Image
-        src="/assets/svg/MobileGoal.svg"
-        alt="Mobile Goal"
-        width={mobileGoalSize}
-        height={mobileGoalSize}
-        priority
-      />
-    </div>
-  );
-};
-
-// Define action types for history
-type HistoryAction =
-  | {
-      type: "MOVE_GOAL";
-      id: string;
-      from: { x: number; y: number };
-      to: { x: number; y: number };
-      timestamp: number;
-    }
-  | {
-      type: "MOVE_TEAM_SQUARE";
-      id: string;
-      from: { x: number; y: number };
-      to: { x: number; y: number };
-      timestamp: number;
-    }
-  | { type: "ADD_LINE"; line: Line; timestamp: number }
-  | { type: "REMOVE_LINE"; line: Line; timestamp: number }
-  | { type: "CLEAR_LINES"; lines: Line[]; timestamp: number }
-  | {
-      type: "UPDATE_SCORE";
-      team: "red" | "blue";
-      from: number;
-      to: number;
-      timestamp: number;
-    }
-  | {
-      type: "ADD_RING";
-      goalId: string;
-      ringColor: "red" | "blue";
-      timestamp: number;
-    }
-  | {
-      type: "REMOVE_RING";
-      goalId: string;
-      ringColor: "red" | "blue";
-      ringIndex: number;
-      timestamp: number;
-    };
-
-// Define the types for the addToHistory function argument
-type HistoryActionWithoutTimestamp =
-  | {
-      type: "MOVE_GOAL";
-      id: string;
-      from: { x: number; y: number };
-      to: { x: number; y: number };
-    }
-  | {
-      type: "MOVE_TEAM_SQUARE";
-      id: string;
-      from: { x: number; y: number };
-      to: { x: number; y: number };
-    }
-  | { type: "ADD_LINE"; line: Line }
-  | { type: "REMOVE_LINE"; line: Line }
-  | { type: "CLEAR_LINES"; lines: Line[] }
-  | { type: "UPDATE_SCORE"; team: "red" | "blue"; from: number; to: number }
-  | { type: "ADD_RING"; goalId: string; ringColor: "red" | "blue" }
-  | {
-      type: "REMOVE_RING";
-      goalId: string;
-      ringColor: "red" | "blue";
-      ringIndex: number;
-    };
-
-interface MobileGoal {
-  id: string;
-  x: number;
-  y: number;
-  rings: Array<"red" | "blue">;
-}
-
-interface WallStake {
-  id: string;
-  rings: ("red" | "blue")[];
-}
-
-interface TeamStake {
-  id: string;
-  rings: ("red" | "blue")[];
-}
+import {
+  FIELD_SIZE_INCHES,
+  HANG_LADDER_SIZE_INCHES,
+  STAKE_SIZE_INCHES,
+  STAKES,
+  INITIAL_SQUARES,
+  INITIAL_MOBILE_GOALS,
+  INITIAL_WALL_STAKES,
+  INITIAL_TEAM_STAKES,
+  DIRECTION_SMOOTHING_FACTOR,
+  MIN_DIRECTION_CHANGE_THRESHOLD,
+  MIN_DIRECTION_POINTS,
+  END_POINTS_TO_IGNORE,
+  MOBILE_GOAL_SIZE_INCHES,
+  FIELD_ZONES,
+} from "./constants/gameConstants";
 
 const GameCanvas: React.FC = () => {
   const [mobileGoals, setMobileGoals] =
@@ -343,37 +78,56 @@ const GameCanvas: React.FC = () => {
     brushColor: "#ffffff",
     isEraser: false,
     lineStyle: "solid" as LineStyle,
-    lineEndStyle: "none" as LineEndStyle,
+    lineEndStyle: "none" as "none" | "arrow",
   });
 
   // History state for undo/redo
-  const [history, setHistory] = useState<HistoryAction[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [dragStartPositions, setDragStartPositions] = useState<
-    Record<string, { x: number; y: number }>
-  >({});
+  const [objectHistory, setObjectHistory] = useState<HistoryAction[]>([]);
+  const [objectHistoryIndex, setObjectHistoryIndex] = useState(-1);
+  // Separate history for drawing actions
+  const [drawingHistory, setDrawingHistory] = useState<HistoryAction[]>([]);
+  const [drawingHistoryIndex, setDrawingHistoryIndex] = useState(-1);
+  const [dragStartPositions, setDragStartPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [redAutoWin, setRedAutoWin] = useState(false);
+  const [blueAutoWin, setBlueAutoWin] = useState(false);
+  const [redScore, setRedScore] = useState(0);
+  const [blueScore, setBlueScore] = useState(0);
+
+  // Add refs for the score elements
+  const redScoreRef = useRef<HTMLDivElement>(null);
+  const blueScoreRef = useRef<HTMLDivElement>(null);
 
   // Function to add a timestamp to drawing actions
   const addToHistory = useCallback(
-    (action: HistoryActionWithoutTimestamp) => {
-      const actionWithTimestamp = {
-        ...action,
-        timestamp: Date.now(),
-      } as HistoryAction;
-
-      // If we're not at the end of the history array, remove all future actions
-      if (historyIndex < history.length - 1) {
-        setHistory((prev) => [
-          ...prev.slice(0, historyIndex + 1),
-          actionWithTimestamp,
-        ]);
+    (action: HistoryAction) => {
+      // Determine which history to update based on action type
+      const isDrawingAction = action.type === "ADD_LINE" || action.type === "REMOVE_LINE" || action.type === "CLEAR_LINES";
+      
+      if (isDrawingAction) {
+        // Add to drawing history
+        if (drawingHistoryIndex < drawingHistory.length - 1) {
+          setDrawingHistory((prev) => [
+            ...prev.slice(0, drawingHistoryIndex + 1),
+            action,
+          ]);
+        } else {
+          setDrawingHistory((prev) => [...prev, action]);
+        }
+        setDrawingHistoryIndex((prev) => prev + 1);
       } else {
-        setHistory((prev) => [...prev, actionWithTimestamp]);
+        // Add to object history
+        if (objectHistoryIndex < objectHistory.length - 1) {
+          setObjectHistory((prev) => [
+            ...prev.slice(0, objectHistoryIndex + 1),
+            action,
+          ]);
+        } else {
+          setObjectHistory((prev) => [...prev, action]);
+        }
+        setObjectHistoryIndex((prev) => prev + 1);
       }
-
-      setHistoryIndex((prev) => prev + 1);
     },
-    [history, historyIndex]
+    [drawingHistory, drawingHistoryIndex, objectHistory, objectHistoryIndex]
   );
 
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
@@ -419,25 +173,12 @@ const GameCanvas: React.FC = () => {
     setShowStakePopup(true);
   };
 
-  const closeStakePopup = () => {
-    setShowStakePopup(false);
-    setSelectedStakeId(null);
-  };
-
   const [teamStakes, setTeamStakes] = useState<TeamStake[]>(INITIAL_TEAM_STAKES);
-  const [selectedTeamStakeId, setSelectedTeamStakeId] = useState<string | null>(
-    null
-  );
   const [showTeamStakePopup, setShowTeamStakePopup] = useState(false);
 
   const handleTeamStakeClick = (stakeId: string) => {
-    setSelectedTeamStakeId(stakeId);
+    setSelectedStakeId(stakeId);
     setShowTeamStakePopup(true);
-  };
-
-  const closeTeamStakePopup = () => {
-    setShowTeamStakePopup(false);
-    setSelectedTeamStakeId(null);
   };
 
   // Function to add a ring to a wall stake
@@ -512,6 +253,252 @@ const GameCanvas: React.FC = () => {
   const [highStakePopupOpen, setHighStakePopupOpen] = useState(false);
   const [highStakeRing, setHighStakeRing] = useState<"red" | "blue" | null>(null);
 
+  // Hang ladder state
+  const [hangScores, setHangScores] = useState<HangScore[]>([
+    { teamId: "teamSquare1", teamNumber: "", teamColor: "red", level: 0 },
+    { teamId: "teamSquare2", teamNumber: "", teamColor: "red", level: 0 },
+    { teamId: "teamSquare3", teamNumber: "", teamColor: "blue", level: 0 },
+    { teamId: "teamSquare4", teamNumber: "", teamColor: "blue", level: 0 },
+  ]);
+  const [hangPopupOpen, setHangPopupOpen] = useState(false);
+
+  // Handle hang score level change
+  const handleHangScoreChange = (teamId: string, newLevel: 0 | 1 | 2 | 3) => {
+    setHangScores(prev => 
+      prev.map(score => 
+        score.teamId === teamId ? { ...score, level: newLevel } : score
+      )
+    );
+  };
+
+  // Calculate scores for both teams
+  const calculateScore = useCallback((goals = mobileGoals) => {
+    let redScore = 0;
+    let blueScore = 0;
+
+    // Add points from autonomous
+    if (redAutoWin && !blueAutoWin) {
+      redScore += 6;
+    } else if (blueAutoWin && !redAutoWin) {
+      blueScore += 6;
+    } else if (redAutoWin && blueAutoWin) {
+      redScore += 3;
+      blueScore += 3;
+    }
+
+    // Add points from mobile goals
+    goals.forEach((goal) => {
+      let goalRedScore = 0;
+      let goalBlueScore = 0;
+
+      // Count regular points (1 per ring)
+      goal.rings.forEach((ring) => {
+        if (ring === "red") goalRedScore += 1;
+        else if (ring === "blue") goalBlueScore += 1;
+      });
+
+      // Add bonus points for the highest ring (2 additional points)
+      if (goal.rings.length > 0) {
+        const topRing = goal.rings[goal.rings.length - 1];
+        if (topRing === "red") goalRedScore += 2;
+        else if (topRing === "blue") goalBlueScore += 2;
+      }
+
+      // Check if the goal is in a scoring zone
+      let zoneEffect = null;
+      
+      // Check each zone to see if the goal is inside it
+      Object.values(FIELD_ZONES).forEach(zone => {
+        // For triangular zones, we need to check if the point is inside the triangle
+        if (zone.shape === "triangle") {
+          const zoneX = zone.x;
+          const zoneY = zone.y;
+          const zoneWidth = zone.width;
+          const zoneHeight = zone.height;
+          
+          // Convert goal coordinates to relative position in the zone's rectangle
+          const goalX = goal.x;
+          const goalY = goal.y;
+          
+          // Check if point is inside triangle based on the corner type
+          let isInTriangle = false;
+          
+          switch (zone.corner) {
+            case "bottomLeft":
+              // Triangle points: (0,0), (width,0), (0,height)
+              isInTriangle = 
+                goalX >= zoneX && 
+                goalX <= zoneX + zoneWidth && 
+                goalY >= zoneY && 
+                goalY <= zoneY + zoneHeight &&
+                (goalX - zoneX) + (goalY - zoneY) <= zoneWidth;
+              break;
+              
+            case "bottomRight":
+              // Triangle points: (0,0), (width,0), (width,height)
+              isInTriangle = 
+                goalX >= zoneX && 
+                goalX <= zoneX + zoneWidth && 
+                goalY >= zoneY && 
+                goalY <= zoneY + zoneHeight &&
+                (zoneX + zoneWidth - goalX) + (goalY - zoneY) <= zoneHeight;
+              break;
+              
+            case "topLeft":
+              // Triangle points: (0,0), (width,height), (0,height)
+              isInTriangle = 
+                goalX >= zoneX && 
+                goalX <= zoneX + zoneWidth && 
+                goalY >= zoneY && 
+                goalY <= zoneY + zoneHeight &&
+                (goalX - zoneX) + (zoneY + zoneHeight - goalY) <= zoneWidth;
+              break;
+              
+            case "topRight":
+              // Triangle points: (width,0), (width,height), (0,height)
+              isInTriangle = 
+                goalX >= zoneX && 
+                goalX <= zoneX + zoneWidth && 
+                goalY >= zoneY && 
+                goalY <= zoneY + zoneHeight &&
+                (zoneX + zoneWidth - goalX) + (zoneY + zoneHeight - goalY) <= zoneHeight;
+              break;
+          }
+          
+          if (isInTriangle) {
+            zoneEffect = zone.effect;
+          }
+        } else {
+          // Check if the goal's position is within the zone boundaries (for rectangular zones)
+          if (
+            goal.x >= zone.x && 
+            goal.x <= zone.x + zone.width && 
+            goal.y >= zone.y && 
+            goal.y <= zone.y + zone.height
+          ) {
+            zoneEffect = zone.effect;
+          }
+        }
+      });
+      
+      // Apply zone effects to the scores
+      if (zoneEffect === "double") {
+        goalRedScore *= 2;
+        goalBlueScore *= 2;
+      } else if (zoneEffect === "negative") {
+        goalRedScore = -goalRedScore;
+        goalBlueScore = -goalBlueScore;
+      }
+
+      // Add goal points to total score
+      redScore += goalRedScore;
+      blueScore += goalBlueScore;
+    });
+
+    // Add points from wall stakes
+    wallStakes.forEach((stake) => {
+      let stakeRedScore = 0;
+      let stakeBlueScore = 0;
+
+      // Count regular points (1 per ring)
+      stake.rings.forEach((ring) => {
+        if (ring === "red") stakeRedScore += 1;
+        else if (ring === "blue") stakeBlueScore += 1;
+      });
+
+      // Add bonus points for the highest ring (2 additional points)
+      if (stake.rings.length > 0) {
+        const topRing = stake.rings[stake.rings.length - 1];
+        if (topRing === "red") stakeRedScore += 2;
+        else if (topRing === "blue") stakeBlueScore += 2;
+      }
+
+      // Add stake points to total score
+      redScore += stakeRedScore;
+      blueScore += stakeBlueScore;
+    });
+
+    // Add points from team stakes
+    teamStakes.forEach((stake) => {
+      let stakeRedScore = 0;
+      let stakeBlueScore = 0;
+
+      // Count regular points (1 per ring)
+      stake.rings.forEach((ring) => {
+        if (ring === "red") stakeRedScore += 1;
+        else if (ring === "blue") stakeBlueScore += 1;
+      });
+
+      // Add bonus points for the highest ring (2 additional points)
+      if (stake.rings.length > 0) {
+        const topRing = stake.rings[stake.rings.length - 1];
+        if (topRing === "red") stakeRedScore += 2;
+        else if (topRing === "blue") stakeBlueScore += 2;
+      }
+
+      // Add stake points to total score
+      redScore += stakeRedScore;
+      blueScore += stakeBlueScore;
+    });
+
+    // Add scoring for high stake
+    if (highStakeRing === "red") {
+      redScore += 6;
+    } else if (highStakeRing === "blue") {
+      blueScore += 6;
+    }
+
+    // Add points from hang ladder
+    hangScores.forEach((score) => {
+      if (score.teamColor === "red") {
+        // Base hang points
+        let hangPoints = 0;
+        if (score.level === 1) hangPoints = 3;      // T1
+        else if (score.level === 2) hangPoints = 6; // T2
+        else if (score.level === 3) hangPoints = 12; // T3
+        
+        // Add bonus points if red has the high stake
+        if (highStakeRing === "red" && score.level > 0) {
+          hangPoints += 2;
+        }
+        
+        redScore += hangPoints;
+      } else if (score.teamColor === "blue") {
+        // Base hang points
+        let hangPoints = 0;
+        if (score.level === 1) hangPoints = 3;      // T1
+        else if (score.level === 2) hangPoints = 6; // T2
+        else if (score.level === 3) hangPoints = 12; // T3
+        
+        // Add bonus points if blue has the high stake
+        if (highStakeRing === "blue" && score.level > 0) {
+          hangPoints += 2;
+        }
+        
+        blueScore += hangPoints;
+      }
+    });
+
+    // Ensure scores don't go below 0 for display
+    const displayRedScore = Math.max(0, redScore);
+    const displayBlueScore = Math.max(0, blueScore);
+
+    return { 
+      red: displayRedScore, 
+      blue: displayBlueScore,
+      // Keep track of actual scores for internal calculations
+      actualRed: redScore,
+      actualBlue: blueScore
+    };
+  }, [redAutoWin, blueAutoWin, wallStakes, teamStakes, highStakeRing, mobileGoals, hangScores]);
+
+  // Initialize scores
+  useEffect(() => {
+    const initialScores = calculateScore();
+    setRedScore(initialScores.red);
+    setBlueScore(initialScores.blue);
+  }, [calculateScore]);
+
   const { isDarkMode } = useTheme();
 
   // Set default brush color to white since the field background is always dark
@@ -545,6 +532,82 @@ const GameCanvas: React.FC = () => {
         distance: isMobile ? 5 : 8, // Reduced activation distance for mobile
       },
     })
+  );
+
+  // Create a modifier to restrict dragging within field boundaries
+  const restrictToFieldModifier: Modifier = useCallback(
+    ({ transform, active }) => {
+      if (!canvasRef.current || !active) {
+        return transform;
+      }
+
+      const id = active.id as string;
+      
+      // Handle mobile goals (using game coordinates)
+      if (id.includes("mobileGoal")) {
+        const goal = mobileGoals.find(g => g.id === id);
+        if (!goal) return transform;
+        
+        // Field boundaries in screen coordinates
+        const halfField = FIELD_SIZE_INCHES / 2;
+        const halfGoalSize = MOBILE_GOAL_SIZE_INCHES / 2;
+        
+        // Calculate the field boundaries in screen coordinates
+        const centerOffsetX = (FIELD_SIZE_INCHES / 2) * scale;
+        const centerOffsetY = (FIELD_SIZE_INCHES / 2) * scale;
+        
+        // Convert goal position to screen coordinates
+        const screenX = goal.x * scale + centerOffsetX;
+        const screenY = centerOffsetY - goal.y * scale; // Invert Y for screen coords
+        
+        // Calculate field boundaries in screen coordinates
+        const minX = centerOffsetX - (halfField - halfGoalSize) * scale;
+        const maxX = centerOffsetX + (halfField - halfGoalSize) * scale;
+        const minY = centerOffsetY - (halfField - halfGoalSize) * scale;
+        const maxY = centerOffsetY + (halfField - halfGoalSize) * scale;
+        
+        // Constrain the transform to keep the goal within boundaries
+        return {
+          ...transform,
+          x: Math.max(minX - screenX, Math.min(maxX - screenX, transform.x)),
+          y: Math.max(minY - screenY, Math.min(maxY - screenY, transform.y)),
+        };
+      }
+      
+      // Handle team squares (using screen coordinates)
+      else if (id.includes("Square")) {
+        const square = squares.find(s => s.id === id);
+        if (!square) return transform;
+        
+        // Get field dimensions in screen coordinates
+        const fieldWidthPx = FIELD_SIZE_INCHES * scale;
+        const fieldHeightPx = FIELD_SIZE_INCHES * scale;
+        
+        // Calculate field boundaries in screen coordinates
+        const canvasWidth = canvasRef.current.width || fieldWidthPx;
+        const canvasHeight = canvasRef.current.height || fieldHeightPx;
+        
+        const fieldLeft = (canvasWidth - fieldWidthPx) / 2;
+        const fieldTop = (canvasHeight - fieldHeightPx) / 2;
+        const fieldRight = fieldLeft + fieldWidthPx;
+        const fieldBottom = fieldTop + fieldHeightPx;
+        
+        // Current square position in screen coordinates
+        const squareX = square.x * scale;
+        const squareY = square.y * scale;
+        const squareSize = square.size * scale;
+        
+        // Constrain the transform to keep the square within boundaries
+        return {
+          ...transform,
+          x: Math.max(fieldLeft - squareX, Math.min(fieldRight - squareSize - squareX, transform.x)),
+          y: Math.max(fieldTop - squareY, Math.min(fieldBottom - squareSize - squareY, transform.y)),
+        };
+      }
+      
+      return transform;
+    },
+    [mobileGoals, squares, scale]
   );
 
   // Function to draw an arrow at the end of a line
@@ -713,6 +776,15 @@ const GameCanvas: React.FC = () => {
     linesRef.current = lines;
   }, [lines]);
 
+  // This useEffect hook is necessary to ensure our canvas redraws whenever lines change
+  useEffect(() => {
+    // Update linesRef with the current lines state
+    linesRef.current = lines;
+    
+    // Redraw canvas immediately after lines change
+    redrawCanvas();
+  }, [lines, redrawCanvas]);
+
   // Function to find lines that intersect with the eraser
   const findIntersectingLines = useCallback(
     (point: { x: number; y: number }, eraserSize: number) => {
@@ -834,6 +906,711 @@ const GameCanvas: React.FC = () => {
     },
     [calculateDirection]
   );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const { active } = event;
+    const id = active.id as string;
+
+    // Record the starting position for history
+    if (id.includes("mobileGoal")) {
+      const goal = mobileGoals.find((g) => g.id === id);
+      if (goal) {
+        setDragStartPositions((prev) => ({
+          ...prev,
+          [id]: { x: goal.x, y: goal.y },
+        }));
+      }
+    } else if (id.includes("Square")) {
+      const square = squares.find((s) => s.id === id);
+      if (square) {
+        setDragStartPositions((prev) => ({
+          ...prev,
+          [id]: { x: square.x, y: square.y },
+        }));
+      }
+    }
+  }, [mobileGoals, squares]);
+
+  // Handle drag move to update score in real-time during dragging
+  const handleDragMove = useCallback((event: DragMoveEvent) => {
+    const { active, delta } = event;
+    const id = active.id as string;
+
+    if (id.includes("mobileGoal")) {
+      // Find the goal being dragged
+      const goalIndex = mobileGoals.findIndex(goal => goal.id === id);
+      if (goalIndex === -1) return;
+
+      // Get the original goal position from when the drag started
+      const originalPosition = dragStartPositions[id];
+      if (!originalPosition) return;
+      
+      // Calculate the new position using the original position and cumulative delta
+      const newX = originalPosition.x + delta.x / scale;
+      const newY = originalPosition.y - delta.y / scale; // Negate y for game coordinates
+      
+      // Create a temporary array with the updated goal position
+      const tempGoals = [...mobileGoals];
+      tempGoals[goalIndex] = {
+        ...tempGoals[goalIndex],
+        x: newX,
+        y: newY
+      };
+      
+      // Force immediate recalculation of scores
+      const newScores = calculateScore(tempGoals);
+      
+      // Update the score state variables
+      setRedScore(newScores.red);
+      setBlueScore(newScores.blue);
+      
+      // Also directly update the DOM for immediate visual feedback
+      if (redScoreRef.current) {
+        redScoreRef.current.textContent = String(newScores.red);
+      }
+      
+      if (blueScoreRef.current) {
+        blueScoreRef.current.textContent = String(newScores.blue);
+      }
+    }
+  }, [mobileGoals, dragStartPositions, scale, calculateScore]);
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, delta } = event;
+      const id = active.id as string;
+
+      if (id.includes("mobileGoal")) {
+        setMobileGoals((prevGoals) => {
+          const updatedGoals = prevGoals.map((goal) => {
+            if (goal.id === id) {
+              // Convert delta from screen pixels to game coordinates
+              // Note: Y is inverted in screen coordinates, so we negate delta.y
+              const newX = goal.x + delta.x / scale;
+              const newY = goal.y - delta.y / scale; // Negate delta.y to convert from screen to game coordinates
+              
+              // Constrain to field boundaries
+              // Field is centered at (0,0) with dimensions FIELD_SIZE_INCHES
+              const halfField = FIELD_SIZE_INCHES / 2;
+              const halfGoalSize = MOBILE_GOAL_SIZE_INCHES / 2;
+              
+              // Constrain X and Y to keep the goal within the field boundaries
+              const constrainedX = Math.max(-halfField + halfGoalSize, Math.min(halfField - halfGoalSize, newX));
+              const constrainedY = Math.max(-halfField + halfGoalSize, Math.min(halfField - halfGoalSize, newY));
+              
+              return {
+                ...goal,
+                x: constrainedX,
+                y: constrainedY,
+              };
+            }
+            return goal;
+          });
+
+          // Record the action in history
+          const startPos = dragStartPositions[id];
+          const endPos = updatedGoals.find((g) => g.id === id);
+
+          if (
+            startPos &&
+            endPos &&
+            (Math.abs(startPos.x - endPos.x) > 0.1 ||
+              Math.abs(startPos.y - endPos.y) > 0.1)
+          ) {
+            // Only record if there was actual movement (with a small threshold to avoid tiny movements)
+            addToHistory({
+              type: "MOVE_GOAL",
+              id,
+              from: { ...startPos }, // Create a copy to avoid reference issues
+              to: { x: endPos.x, y: endPos.y },
+              timestamp: Date.now(),
+            });
+          }
+
+          return updatedGoals;
+        });
+      } else if (id.includes("Square")) {
+        setSquares((prevSquares) => {
+          const updatedSquares = prevSquares.map((square) => {
+            if (square.id === id) {
+              // For squares, we don't need to negate delta.y because they use screen coordinates
+              // where Y increases downward, which matches the delta.y direction
+              const newX = square.x + delta.x / scale;
+              const newY = square.y + delta.y / scale; // Don't negate for screen coordinates
+              
+              // Get field dimensions in screen coordinates
+              const fieldWidthPx = FIELD_SIZE_INCHES * scale;
+              const fieldHeightPx = FIELD_SIZE_INCHES * scale;
+              
+              // Calculate field boundaries in screen coordinates
+              // The field is positioned at the center of the canvas
+              const canvasWidth = canvasRef.current?.width || fieldWidthPx;
+              const canvasHeight = canvasRef.current?.height || fieldHeightPx;
+              
+              const fieldLeft = (canvasWidth - fieldWidthPx) / 2;
+              const fieldTop = (canvasHeight - fieldHeightPx) / 2;
+              const fieldRight = fieldLeft + fieldWidthPx;
+              const fieldBottom = fieldTop + fieldHeightPx;
+              
+              // Constrain square position to keep it within field boundaries
+              // Account for the square's size
+              const constrainedX = Math.max(fieldLeft, Math.min(fieldRight - square.size * scale, newX));
+              const constrainedY = Math.max(fieldTop, Math.min(fieldBottom - square.size * scale, newY));
+              
+              return {
+                ...square,
+                x: constrainedX,
+                y: constrainedY,
+              };
+            }
+            return square;
+          });
+
+          // Record the action in history
+          const startPos = dragStartPositions[id];
+          const endPos = updatedSquares.find((s) => s.id === id);
+
+          if (
+            startPos &&
+            endPos &&
+            (Math.abs(startPos.x - endPos.x) > 0.1 ||
+              Math.abs(startPos.y - endPos.y) > 0.1)
+          ) {
+            // Only record if there was actual movement (with a small threshold to avoid tiny movements)
+            addToHistory({
+              type: "MOVE_TEAM_SQUARE",
+              id,
+              from: { ...startPos }, // Create a copy to avoid reference issues
+              to: { x: endPos.x, y: endPos.y },
+              timestamp: Date.now(),
+            });
+          }
+
+          return updatedSquares;
+        });
+      }
+    },
+    [scale, dragStartPositions, addToHistory]
+  );
+
+  // Function to clear all drawings from the canvas
+  const handleClearCanvas = useCallback(() => {
+    // Add current lines to history before clearing
+    if (lines.length > 0) {
+      addToHistory({
+        type: "CLEAR_LINES",
+        lines: lines,
+        timestamp: Date.now(),
+      });
+    }
+
+    setLines([]);
+
+    if (canvasRef.current && canvasCtxRef.current) {
+      canvasCtxRef.current.clearRect(
+        0,
+        0,
+        canvasRef.current.width,
+        canvasRef.current.height
+      );
+    }
+  }, [lines, addToHistory]);
+
+  // Helper function to calculate base score without autonomous points
+  const calculateBaseScore = useCallback(
+    (team: "red" | "blue") => {
+      const currentScore = team === "red" ? redScore : blueScore;
+      const hasAutoWin = team === "red" ? redAutoWin : blueAutoWin;
+      const otherTeamHasAutoWin = team === "red" ? blueAutoWin : redAutoWin;
+
+      // Remove autonomous points from current score
+      if (hasAutoWin && !otherTeamHasAutoWin) {
+        return currentScore - 6; // Remove 6 points for solo auto win
+      } else if (hasAutoWin && otherTeamHasAutoWin) {
+        return currentScore - 3; // Remove 3 points for shared auto win
+      }
+
+      return currentScore; // No auto points to remove
+    },
+    [redScore, blueScore, redAutoWin, blueAutoWin]
+  );
+
+  // Add a ring to a goal
+  const addRingToGoal = (goalId: string, color: "red" | "blue") => {
+    // Update mobile goals
+    const updatedGoals = mobileGoals.map((goal) =>
+      goal.id === goalId
+        ? {
+            ...goal,
+            rings:
+              goal.rings.length < 6 ? [...goal.rings, color] : goal.rings,
+          }
+        : goal
+    );
+
+    setMobileGoals(updatedGoals);
+
+    // Add to history for undo/redo
+    addToHistory({
+      type: "ADD_RING",
+      goalId,
+      ringColor: color,
+      timestamp: Date.now(),
+    });
+  };
+
+  // Remove a ring from a goal
+  const removeRingFromGoal = (goalId: string) => {
+    const goalToUpdate = mobileGoals.find((g) => g.id === goalId);
+    if (!goalToUpdate || goalToUpdate.rings.length === 0) return;
+
+    // Get the color of the ring being removed for history
+    const removedRingColor = goalToUpdate.rings[goalToUpdate.rings.length - 1];
+    const ringIndex = goalToUpdate.rings.length - 1;
+
+    // Add a history action for undo/redo
+    const action: HistoryAction = {
+      type: "REMOVE_RING",
+      goalId,
+      ringColor: removedRingColor,
+      ringIndex,
+      timestamp: Date.now(),
+    };
+    addToHistory(action);
+
+    // Update the goals state
+    setMobileGoals((goals) => {
+      return goals.map((goal) => {
+        if (goal.id === goalId && goal.rings.length > 0) {
+          return {
+            ...goal,
+            rings: goal.rings.slice(0, -1),
+          };
+        }
+        return goal;
+      });
+    });
+  };
+
+  // Fix the autonomous scoring logic with completely reset approach
+  const handleRedAutoClick = useCallback(() => {
+    const newRedAutoState = !redAutoWin;
+
+    // Calculate base scores without any autonomous points
+    const baseRedScore = calculateBaseScore("red");
+    const baseBlueScore = calculateBaseScore("blue");
+
+    // Apply autonomous points based on the new state
+    let newRedScore = baseRedScore;
+    let newBlueScore = baseBlueScore;
+
+    if (newRedAutoState && !blueAutoWin) {
+      // Red solo auto win (6 points)
+      newRedScore += 6;
+    } else if (!newRedAutoState && blueAutoWin) {
+      // Blue solo auto win (6 points)
+      newBlueScore += 6;
+    } else if (newRedAutoState && blueAutoWin) {
+      // Both have auto win (3 points each)
+      newRedScore += 3;
+      newBlueScore += 3;
+    }
+
+    // Update states
+    setRedAutoWin(newRedAutoState);
+    setRedScore(newRedScore);
+    setBlueScore(newBlueScore);
+
+    // Add to history
+    addToHistory({
+      type: "UPDATE_SCORE",
+      team: "red",
+      from: redScore,
+      to: newRedScore,
+      timestamp: Date.now(),
+    });
+
+    if (newBlueScore !== blueScore) {
+      addToHistory({
+        type: "UPDATE_SCORE",
+        team: "blue",
+        from: blueScore,
+        to: newBlueScore,
+        timestamp: Date.now(),
+      });
+    }
+  }, [
+    redAutoWin,
+    blueAutoWin,
+    redScore,
+    blueScore,
+    addToHistory,
+    calculateBaseScore,
+  ]);
+
+  const handleBlueAutoClick = useCallback(() => {
+    const newBlueAutoState = !blueAutoWin;
+
+    // Calculate base scores without any autonomous points
+    const baseRedScore = calculateBaseScore("red");
+    const baseBlueScore = calculateBaseScore("blue");
+
+    // Apply autonomous points based on the new state
+    let newRedScore = baseRedScore;
+    let newBlueScore = baseBlueScore;
+
+    if (!redAutoWin && newBlueAutoState) {
+      // Blue solo auto win (6 points)
+      newBlueScore += 6;
+    } else if (redAutoWin && !newBlueAutoState) {
+      // Red solo auto win (6 points)
+      newRedScore += 6;
+    } else if (redAutoWin && newBlueAutoState) {
+      // Both have auto win (3 points each)
+      newRedScore += 3;
+      newBlueScore += 3;
+    }
+
+    // Update states
+    setBlueAutoWin(newBlueAutoState);
+    setRedScore(newRedScore);
+    setBlueScore(newBlueScore);
+
+    // Add to history
+    addToHistory({
+      type: "UPDATE_SCORE",
+      team: "blue",
+      from: blueScore,
+      to: newBlueScore,
+      timestamp: Date.now(),
+    });
+
+    if (newRedScore !== redScore) {
+      addToHistory({
+        type: "UPDATE_SCORE",
+        team: "red",
+        from: redScore,
+        to: newRedScore,
+        timestamp: Date.now(),
+      });
+    }
+  }, [
+    redAutoWin,
+    blueAutoWin,
+    redScore,
+    blueScore,
+    addToHistory,
+    calculateBaseScore,
+  ]);
+
+  // Update the undo/redo functionality to handle ring operations
+  const handleUndo = useCallback(() => {
+    if (drawingSettings.isDrawMode) {
+      // Handle drawing undo
+      if (drawingHistoryIndex >= 0) {
+        const action = drawingHistory[drawingHistoryIndex];
+        
+        switch (action?.type) {
+          case "ADD_LINE":
+            setLines((lines) => {
+              // Need to compare lines by structure not by reference
+              // since the objects might not be the same instance
+              const newLines = lines.filter((line) => {
+                // Compare key properties to identify the same line
+                return !(
+                  line.color === action.line.color &&
+                  line.size === action.line.size &&
+                  line.style === action.line.style &&
+                  line.endStyle === action.line.endStyle &&
+                  JSON.stringify(line.points) === JSON.stringify(action.line.points)
+                );
+              });
+              return newLines;
+            });
+            break;
+          case "REMOVE_LINE":
+            setLines((lines) => [...lines, action.line]);
+            break;
+          case "CLEAR_LINES":
+            setLines(action.lines);
+            break;
+        }
+        
+        setDrawingHistoryIndex(drawingHistoryIndex - 1);
+        
+        // Force immediate canvas redraw after state update
+        setTimeout(() => redrawCanvas(), 0);
+      }
+    } else {
+      // Handle object undo
+      if (objectHistoryIndex > 0) {
+        const action = objectHistory[objectHistoryIndex - 1];
+        
+        switch (action.type) {
+          case "MOVE_GOAL":
+            setMobileGoals((goals) => {
+              return goals.map((goal) => {
+                if (goal.id === action.id) {
+                  return {
+                    ...goal,
+                    x: action.from.x,
+                    y: action.from.y,
+                  };
+                }
+                return goal;
+              });
+            });
+            break;
+
+          case "MOVE_TEAM_SQUARE":
+            setSquares((squares) => {
+              return squares.map((square) => {
+                if (square.id === action.id) {
+                  return {
+                    ...square,
+                    x: action.from.x,
+                    y: action.from.y,
+                  };
+                }
+                return square;
+              });
+            });
+            break;
+
+          case "UPDATE_SCORE":
+            if (action.team === "red") {
+              setRedScore(action.from);
+              if (action.from < action.to && action.to - action.from === 6) {
+                setRedAutoWin(false);
+              } else if (
+                action.from < action.to &&
+                action.to - action.from === 3
+              ) {
+                setRedAutoWin(false);
+              }
+            } else {
+              setBlueScore(action.from);
+              if (action.from < action.to && action.to - action.from === 6) {
+                setBlueAutoWin(false);
+              } else if (
+                action.from < action.to &&
+                action.to - action.from === 3
+              ) {
+                setBlueAutoWin(false);
+              }
+            }
+            break;
+
+          case "ADD_RING":
+            setMobileGoals((goals) => {
+              return goals.map((goal) => {
+                if (goal.id === action.goalId) {
+                  return {
+                    ...goal,
+                    rings: goal.rings.slice(0, -1),
+                  };
+                }
+                return goal;
+              });
+            });
+            break;
+
+          case "REMOVE_RING":
+            setMobileGoals((goals) => {
+              return goals.map((goal) => {
+                if (goal.id === action.goalId) {
+                  const newRings = [...goal.rings];
+                  newRings.splice(action.ringIndex, 0, action.ringColor);
+                  return {
+                    ...goal,
+                    rings: newRings,
+                  };
+                }
+                return goal;
+              });
+            });
+            break;
+        }
+        
+        setObjectHistoryIndex(objectHistoryIndex - 1);
+      }
+    }
+  }, [
+    drawingSettings.isDrawMode, 
+    drawingHistory, 
+    drawingHistoryIndex, 
+    objectHistory, 
+    objectHistoryIndex,
+    redrawCanvas
+  ]);
+
+  const handleRedo = useCallback(() => {
+    if (drawingSettings.isDrawMode) {
+      // Handle drawing redo
+      if (drawingHistoryIndex < drawingHistory.length - 1) {
+        const action = drawingHistory[drawingHistoryIndex + 1];
+        
+        switch (action.type) {
+          case "ADD_LINE":
+            setLines((lines) => [...lines, action.line]);
+            break;
+          case "REMOVE_LINE":
+            setLines((lines) => {
+              // Need to compare lines by structure not by reference
+              const newLines = lines.filter((line) => {
+                // Compare key properties to identify the same line
+                return !(
+                  line.color === action.line.color &&
+                  line.size === action.line.size &&
+                  line.style === action.line.style &&
+                  line.endStyle === action.line.endStyle &&
+                  JSON.stringify(line.points) === JSON.stringify(action.line.points)
+                );
+              });
+              return newLines;
+            });
+            break;
+          case "CLEAR_LINES":
+            setLines([]);
+            break;
+        }
+        
+        setDrawingHistoryIndex(drawingHistoryIndex + 1);
+        
+        // Force immediate canvas redraw after state update
+        setTimeout(() => redrawCanvas(), 0);
+      }
+    } else {
+      // Handle object redo
+      if (objectHistoryIndex < objectHistory.length) {
+        const action = objectHistory[objectHistoryIndex];
+        
+        switch (action.type) {
+          case "MOVE_GOAL":
+            setMobileGoals((goals) => {
+              return goals.map((goal) => {
+                if (goal.id === action.id) {
+                  return {
+                    ...goal,
+                    x: action.to.x,
+                    y: action.to.y,
+                  };
+                }
+                return goal;
+              });
+            });
+            break;
+
+          case "MOVE_TEAM_SQUARE":
+            setSquares((squares) => {
+              return squares.map((square) => {
+                if (square.id === action.id) {
+                  return {
+                    ...square,
+                    x: action.to.x,
+                    y: action.to.y,
+                  };
+                }
+                return square;
+              });
+            });
+            break;
+
+          case "UPDATE_SCORE":
+            if (action.team === "red") {
+              setRedScore(action.to);
+              if (action.from < action.to && action.to - action.from === 6) {
+                setRedAutoWin(true);
+              } else if (
+                action.from < action.to &&
+                action.to - action.from === 3
+              ) {
+                setRedAutoWin(true);
+              }
+            } else {
+              setBlueScore(action.to);
+              if (action.from < action.to && action.to - action.from === 6) {
+                setBlueAutoWin(true);
+              } else if (
+                action.from < action.to &&
+                action.to - action.from === 3
+              ) {
+                setBlueAutoWin(true);
+              }
+            }
+            break;
+
+          case "ADD_RING":
+            setMobileGoals((goals) => {
+              return goals.map((goal) => {
+                if (goal.id === action.goalId) {
+                  return {
+                    ...goal,
+                    rings: [...goal.rings, action.ringColor],
+                  };
+                }
+                return goal;
+              });
+            });
+            break;
+
+          case "REMOVE_RING":
+            setMobileGoals((goals) => {
+              return goals.map((goal) => {
+                if (goal.id === action.goalId) {
+                  const newRings = [...goal.rings];
+                  newRings.splice(action.ringIndex, 1);
+                  return {
+                    ...goal,
+                    rings: newRings,
+                  };
+                }
+                return goal;
+              });
+            });
+            break;
+        }
+        
+        setObjectHistoryIndex(objectHistoryIndex + 1);
+      }
+    }
+  }, [
+    drawingSettings.isDrawMode, 
+    drawingHistory, 
+    drawingHistoryIndex, 
+    objectHistory, 
+    objectHistoryIndex,
+    redrawCanvas
+  ]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if it's a Mac (Command key) or Windows/Linux (Control key)
+      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+
+      if ((isMac && e.metaKey) || (!isMac && e.ctrlKey)) {
+        // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
+        if (e.key === "z" && !e.shiftKey) {
+          e.preventDefault();
+          handleUndo();
+        }
+        // Redo: Cmd+Shift+Z (Mac) or Ctrl+Y (Windows/Linux)
+        else if (
+          (isMac && e.key === "z" && e.shiftKey) ||
+          (!isMac && e.key === "y")
+        ) {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [handleUndo, handleRedo]);
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -1015,6 +1792,7 @@ const GameCanvas: React.FC = () => {
         addToHistory({
           type: "ADD_LINE",
           line: finalLine,
+          timestamp: Date.now(),
         });
       }
     }
@@ -1034,672 +1812,34 @@ const GameCanvas: React.FC = () => {
     redrawCanvas,
   ]);
 
-  const handleDragStart = useCallback(
-    (event: DragStartEvent) => {
-      const { active } = event;
-      const id = active.id as string;
-
-      // Store the starting position for history
-      if (id.includes("mobileGoal")) {
-        const goal = mobileGoals.find((g) => g.id === id);
-        if (goal) {
-          setDragStartPositions((prev) => ({
-            ...prev,
-            [id]: { x: goal.x, y: goal.y },
-          }));
-        }
-      } else if (id.includes("Square")) {
-        const square = squares.find((s) => s.id === id);
-        if (square) {
-          setDragStartPositions((prev) => ({
-            ...prev,
-            [id]: { x: square.x, y: square.y },
-          }));
-        }
-      }
-    },
-    [mobileGoals, squares]
-  );
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, delta } = event;
-      const id = active.id as string;
-
-      if (id.includes("mobileGoal")) {
-        setMobileGoals((prevGoals) => {
-          const updatedGoals = prevGoals.map((goal) => {
-            if (goal.id === id) {
-              // Convert delta from screen pixels to game coordinates
-              // Note: Y is inverted in screen coordinates, so we negate delta.y
-              return {
-                ...goal,
-                x: goal.x + delta.x / scale,
-                y: goal.y - delta.y / scale, // Negate delta.y to convert from screen to game coordinates
-              };
-            }
-            return goal;
-          });
-
-          // Record the action in history
-          const startPos = dragStartPositions[id];
-          const endPos = updatedGoals.find((g) => g.id === id);
-
-          if (
-            startPos &&
-            endPos &&
-            (Math.abs(startPos.x - endPos.x) > 0.1 ||
-              Math.abs(startPos.y - endPos.y) > 0.1)
-          ) {
-            // Only record if there was actual movement (with a small threshold to avoid tiny movements)
-            addToHistory({
-              type: "MOVE_GOAL",
-              id,
-              from: { ...startPos }, // Create a copy to avoid reference issues
-              to: { x: endPos.x, y: endPos.y },
-            });
-          }
-
-          return updatedGoals;
-        });
-      } else if (id.includes("Square")) {
-        setSquares((prevSquares) => {
-          const updatedSquares = prevSquares.map((square) => {
-            if (square.id === id) {
-              // For squares, we don't need to negate delta.y because they use screen coordinates
-              // where Y increases downward, which matches the delta.y direction
-              return {
-                ...square,
-                x: square.x + delta.x / scale,
-                y: square.y + delta.y / scale, // Don't negate for screen coordinates
-              };
-            }
-            return square;
-          });
-
-          // Record the action in history
-          const startPos = dragStartPositions[id];
-          const endPos = updatedSquares.find((s) => s.id === id);
-
-          if (
-            startPos &&
-            endPos &&
-            (Math.abs(startPos.x - endPos.x) > 0.1 ||
-              Math.abs(startPos.y - endPos.y) > 0.1)
-          ) {
-            // Only record if there was actual movement (with a small threshold to avoid tiny movements)
-            addToHistory({
-              type: "MOVE_TEAM_SQUARE",
-              id,
-              from: { ...startPos }, // Create a copy to avoid reference issues
-              to: { x: endPos.x, y: endPos.y },
-            });
-          }
-
-          return updatedSquares;
-        });
-      }
-    },
-    [scale, dragStartPositions, addToHistory]
-  );
-
-  // Function to clear all drawings from the canvas
-  const handleClearCanvas = useCallback(() => {
-    // Add current lines to history before clearing
-    if (lines.length > 0) {
-      addToHistory({
-        type: "CLEAR_LINES",
-        lines: lines,
-      });
-    }
-
-    setLines([]);
-
-    if (canvasRef.current && canvasCtxRef.current) {
-      canvasCtxRef.current.clearRect(
-        0,
-        0,
-        canvasRef.current.width,
-        canvasRef.current.height
-      );
-    }
-  }, [lines, addToHistory]);
-
-  // Score state
-  const [redScore, setRedScore] = useState(0);
-  const [blueScore, setBlueScore] = useState(0);
-  const [redAutoWin, setRedAutoWin] = useState(false);
-  const [blueAutoWin, setBlueAutoWin] = useState(false);
-
-  // Helper function to calculate base score without autonomous points
-  const calculateBaseScore = useCallback(
-    (team: "red" | "blue") => {
-      const currentScore = team === "red" ? redScore : blueScore;
-      const hasAutoWin = team === "red" ? redAutoWin : blueAutoWin;
-      const otherTeamHasAutoWin = team === "red" ? blueAutoWin : redAutoWin;
-
-      // Remove autonomous points from current score
-      if (hasAutoWin && !otherTeamHasAutoWin) {
-        return currentScore - 6; // Remove 6 points for solo auto win
-      } else if (hasAutoWin && otherTeamHasAutoWin) {
-        return currentScore - 3; // Remove 3 points for shared auto win
-      }
-
-      return currentScore; // No auto points to remove
-    },
-    [redScore, blueScore, redAutoWin, blueAutoWin]
-  );
-
-  // Add a ring to a goal
-  const addRingToGoal = (goalId: string, color: "red" | "blue") => {
-    // Update mobile goals
-    const updatedGoals = mobileGoals.map((goal) =>
-      goal.id === goalId
-        ? {
-            ...goal,
-            rings:
-              goal.rings.length < 6 ? [...goal.rings, color] : goal.rings,
-          }
-        : goal
-    );
-
-    setMobileGoals(updatedGoals);
-
-    // Add to history for undo/redo
-    addToHistory({
-      type: "ADD_RING",
-      goalId,
-      ringColor: color,
-    });
-  };
-
-  // Remove a ring from a goal
-  const removeRingFromGoal = (goalId: string) => {
-    const goalToUpdate = mobileGoals.find((g) => g.id === goalId);
-    if (!goalToUpdate || goalToUpdate.rings.length === 0) return;
-
-    // Get the color of the ring being removed for history
-    const removedRingColor = goalToUpdate.rings[goalToUpdate.rings.length - 1];
-    const ringIndex = goalToUpdate.rings.length - 1;
-
-    // Add a history action for undo/redo
-    const action: HistoryActionWithoutTimestamp = {
-      type: "REMOVE_RING",
-      goalId,
-      ringColor: removedRingColor,
-      ringIndex,
-    };
-    addToHistory(action);
-
-    // Update the goals state
-    setMobileGoals((goals) => {
-      return goals.map((goal) => {
-        if (goal.id === goalId && goal.rings.length > 0) {
-          return {
-            ...goal,
-            rings: goal.rings.slice(0, -1),
-          };
-        }
-        return goal;
-      });
-    });
-  };
-
-  // Fix the autonomous scoring logic with completely reset approach
-  const handleRedAutoClick = useCallback(() => {
-    const newRedAutoState = !redAutoWin;
-
-    // Calculate base scores without any autonomous points
-    const baseRedScore = calculateBaseScore("red");
-    const baseBlueScore = calculateBaseScore("blue");
-
-    // Apply autonomous points based on the new state
-    let newRedScore = baseRedScore;
-    let newBlueScore = baseBlueScore;
-
-    if (newRedAutoState && !blueAutoWin) {
-      // Red solo auto win (6 points)
-      newRedScore += 6;
-    } else if (!newRedAutoState && blueAutoWin) {
-      // Blue solo auto win (6 points)
-      newBlueScore += 6;
-    } else if (newRedAutoState && blueAutoWin) {
-      // Both have auto win (3 points each)
-      newRedScore += 3;
-      newBlueScore += 3;
-    }
-
-    // Update states
-    setRedAutoWin(newRedAutoState);
-    setRedScore(newRedScore);
-    setBlueScore(newBlueScore);
-
-    // Add to history
-    addToHistory({
-      type: "UPDATE_SCORE",
-      team: "red",
-      from: redScore,
-      to: newRedScore,
-    });
-
-    if (newBlueScore !== blueScore) {
-      addToHistory({
-        type: "UPDATE_SCORE",
-        team: "blue",
-        from: blueScore,
-        to: newBlueScore,
-      });
-    }
-  }, [
-    redAutoWin,
-    blueAutoWin,
-    redScore,
-    blueScore,
-    addToHistory,
-    calculateBaseScore,
-  ]);
-
-  const handleBlueAutoClick = useCallback(() => {
-    const newBlueAutoState = !blueAutoWin;
-
-    // Calculate base scores without any autonomous points
-    const baseRedScore = calculateBaseScore("red");
-    const baseBlueScore = calculateBaseScore("blue");
-
-    // Apply autonomous points based on the new state
-    let newRedScore = baseRedScore;
-    let newBlueScore = baseBlueScore;
-
-    if (!redAutoWin && newBlueAutoState) {
-      // Blue solo auto win (6 points)
-      newBlueScore += 6;
-    } else if (redAutoWin && !newBlueAutoState) {
-      // Red solo auto win (6 points)
-      newRedScore += 6;
-    } else if (redAutoWin && newBlueAutoState) {
-      // Both have auto win (3 points each)
-      newRedScore += 3;
-      newBlueScore += 3;
-    }
-
-    // Update states
-    setBlueAutoWin(newBlueAutoState);
-    setRedScore(newRedScore);
-    setBlueScore(newBlueScore);
-
-    // Add to history
-    addToHistory({
-      type: "UPDATE_SCORE",
-      team: "blue",
-      from: blueScore,
-      to: newBlueScore,
-    });
-
-    if (newRedScore !== redScore) {
-      addToHistory({
-        type: "UPDATE_SCORE",
-        team: "red",
-        from: redScore,
-        to: newRedScore,
-      });
-    }
-  }, [
-    redAutoWin,
-    blueAutoWin,
-    redScore,
-    blueScore,
-    addToHistory,
-    calculateBaseScore,
-  ]);
-
-  // Update the undo/redo functionality to handle ring operations
-  const handleUndo = useCallback(() => {
-    if (historyIndex > 0) {
-      const action = history[historyIndex - 1];
-
-      switch (action.type) {
-        case "MOVE_GOAL":
-          setMobileGoals((goals) => {
-            return goals.map((goal) => {
-              if (goal.id === action.id) {
-                return {
-                  ...goal,
-                  x: action.from.x,
-                  y: action.from.y,
-                };
-              }
-              return goal;
-            });
-          });
-          break;
-
-        case "MOVE_TEAM_SQUARE":
-          setSquares((squares) => {
-            return squares.map((square) => {
-              if (square.id === action.id) {
-                return {
-                  ...square,
-                  x: action.from.x,
-                  y: action.from.y,
-                };
-              }
-              return square;
-            });
-          });
-          break;
-
-        case "ADD_LINE":
-          setLines((lines) => lines.filter((line) => line !== action.line));
-          break;
-
-        case "REMOVE_LINE":
-          setLines((lines) => [...lines, action.line]);
-          break;
-
-        case "CLEAR_LINES":
-          setLines(action.lines);
-          break;
-
-        case "UPDATE_SCORE":
-          if (action.team === "red") {
-            setRedScore(action.from);
-            if (action.from < action.to && action.to - action.from === 6) {
-              setRedAutoWin(false);
-            } else if (
-              action.from < action.to &&
-              action.to - action.from === 3
-            ) {
-              setRedAutoWin(false);
-            }
-          } else {
-            setBlueScore(action.from);
-            if (action.from < action.to && action.to - action.from === 6) {
-              setBlueAutoWin(false);
-            } else if (
-              action.from < action.to &&
-              action.to - action.from === 3
-            ) {
-              setBlueAutoWin(false);
-            }
-          }
-          break;
-
-        case "ADD_RING":
-          setMobileGoals((goals) => {
-            return goals.map((goal) => {
-              if (goal.id === action.goalId) {
-                return {
-                  ...goal,
-                  rings: goal.rings.slice(0, -1),
-                };
-              }
-              return goal;
-            });
-          });
-          break;
-
-        case "REMOVE_RING":
-          setMobileGoals((goals) => {
-            return goals.map((goal) => {
-              if (goal.id === action.goalId) {
-                const newRings = [...goal.rings];
-                newRings.splice(action.ringIndex, 0, action.ringColor);
-                return {
-                  ...goal,
-                  rings: newRings,
-                };
-              }
-              return goal;
-            });
-          });
-          break;
-      }
-
-      setHistoryIndex(historyIndex - 1);
-    }
-  }, [history, historyIndex]);
-
-  const handleRedo = useCallback(() => {
-    if (historyIndex < history.length) {
-      const action = history[historyIndex];
-
-      switch (action.type) {
-        case "MOVE_GOAL":
-          setMobileGoals((goals) => {
-            return goals.map((goal) => {
-              if (goal.id === action.id) {
-                return {
-                  ...goal,
-                  x: action.to.x,
-                  y: action.to.y,
-                };
-              }
-              return goal;
-            });
-          });
-          break;
-
-        case "MOVE_TEAM_SQUARE":
-          setSquares((squares) => {
-            return squares.map((square) => {
-              if (square.id === action.id) {
-                return {
-                  ...square,
-                  x: action.to.x,
-                  y: action.to.y,
-                };
-              }
-              return square;
-            });
-          });
-          break;
-
-        case "ADD_LINE":
-          setLines((lines) => [...lines, action.line]);
-          break;
-
-        case "REMOVE_LINE":
-          setLines((lines) => lines.filter((line) => line !== action.line));
-          break;
-
-        case "CLEAR_LINES":
-          setLines([]);
-          break;
-
-        case "UPDATE_SCORE":
-          if (action.team === "red") {
-            setRedScore(action.to);
-            if (action.from < action.to && action.to - action.from === 6) {
-              setRedAutoWin(true);
-            } else if (
-              action.from < action.to &&
-              action.to - action.from === 3
-            ) {
-              setRedAutoWin(true);
-            }
-          } else {
-            setBlueScore(action.to);
-            if (action.from < action.to && action.to - action.from === 6) {
-              setBlueAutoWin(true);
-            } else if (
-              action.from < action.to &&
-              action.to - action.from === 3
-            ) {
-              setBlueAutoWin(true);
-            }
-          }
-          break;
-
-        case "ADD_RING":
-          setMobileGoals((goals) => {
-            return goals.map((goal) => {
-              if (goal.id === action.goalId) {
-                return {
-                  ...goal,
-                  rings: [...goal.rings, action.ringColor],
-                };
-              }
-              return goal;
-            });
-          });
-          break;
-
-        case "REMOVE_RING":
-          setMobileGoals((goals) => {
-            return goals.map((goal) => {
-              if (goal.id === action.goalId) {
-                const newRings = [...goal.rings];
-                newRings.splice(action.ringIndex, 1);
-                return {
-                  ...goal,
-                  rings: newRings,
-                };
-              }
-              return goal;
-            });
-          });
-          break;
-      }
-
-      setHistoryIndex(historyIndex + 1);
-    }
-  }, [history, historyIndex]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check if it's a Mac (Command key) or Windows/Linux (Control key)
-      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
-
-      if ((isMac && e.metaKey) || (!isMac && e.ctrlKey)) {
-        // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
-        if (e.key === "z" && !e.shiftKey) {
-          e.preventDefault();
-          handleUndo();
-        }
-        // Redo: Cmd+Shift+Z (Mac) or Ctrl+Y (Windows/Linux)
-        else if (
-          (isMac && e.key === "z" && e.shiftKey) ||
-          (!isMac && e.key === "y")
-        ) {
-          e.preventDefault();
-          handleRedo();
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [handleUndo, handleRedo]);
-
-  // Calculate scores for both teams
-  const calculateScore = () => {
-    let redScore = 0;
-    let blueScore = 0;
-
-    // Add points from autonomous
-    if (redAutoWin && !blueAutoWin) {
-      redScore += 6;
-    } else if (blueAutoWin && !redAutoWin) {
-      blueScore += 6;
-    } else if (redAutoWin && blueAutoWin) {
-      redScore += 3;
-      blueScore += 3;
-    }
-
-    // Add points from mobile goals
-    mobileGoals.forEach((goal) => {
-      let goalRedScore = 0;
-      let goalBlueScore = 0;
-
-      // Count regular points (1 per ring)
-      goal.rings.forEach((ring) => {
-        if (ring === "red") goalRedScore += 1;
-        else if (ring === "blue") goalBlueScore += 1;
-      });
-
-      // Add bonus points for the highest ring (2 additional points)
-      if (goal.rings.length > 0) {
-        const topRing = goal.rings[goal.rings.length - 1];
-        if (topRing === "red") goalRedScore += 2;
-        else if (topRing === "blue") goalBlueScore += 2;
-      }
-
-      // Add goal points to total score
-      redScore += goalRedScore;
-      blueScore += goalBlueScore;
-    });
-
-    // Add points from wall stakes
-    wallStakes.forEach((stake) => {
-      let stakeRedScore = 0;
-      let stakeBlueScore = 0;
-
-      // Count regular points (1 per ring)
-      stake.rings.forEach((ring) => {
-        if (ring === "red") stakeRedScore += 1;
-        else if (ring === "blue") stakeBlueScore += 1;
-      });
-
-      // Add bonus points for the highest ring (2 additional points)
-      if (stake.rings.length > 0) {
-        const topRing = stake.rings[stake.rings.length - 1];
-        if (topRing === "red") stakeRedScore += 2;
-        else if (topRing === "blue") stakeBlueScore += 2;
-      }
-
-      // Add stake points to total score
-      redScore += stakeRedScore;
-      blueScore += stakeBlueScore;
-    });
-
-    // Add points from team stakes
-    teamStakes.forEach((stake) => {
-      let stakeRedScore = 0;
-      let stakeBlueScore = 0;
-
-      // Count regular points (1 per ring)
-      stake.rings.forEach((ring) => {
-        if (ring === "red") stakeRedScore += 1;
-        else if (ring === "blue") stakeBlueScore += 1;
-      });
-
-      // Add bonus points for the highest ring (2 additional points)
-      if (stake.rings.length > 0) {
-        const topRing = stake.rings[stake.rings.length - 1];
-        if (topRing === "red") stakeRedScore += 2;
-        else if (topRing === "blue") stakeBlueScore += 2;
-      }
-
-      // Add stake points to total score
-      redScore += stakeRedScore;
-      blueScore += stakeBlueScore;
-    });
-
-    // Add points from high stake (6 points for the team whose ring is on it)
-    if (highStakeRing === "red") {
-      redScore += 6;
-    } else if (highStakeRing === "blue") {
-      blueScore += 6;
-    }
-
-    return { red: redScore, blue: blueScore };
-  };
-
   return (
     <div className="game-canvas-container" ref={containerRef}>
       <DndContext
         sensors={sensors}
+        modifiers={[restrictToFieldModifier]}
         onDragEnd={handleDragEnd}
         onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        measuring={{
+          droppable: {
+            strategy: MeasuringStrategy.Always
+          },
+        }}
         id="main-dnd-context"
       >
         <DrawingSidebar
           settings={drawingSettings}
           onSettingsChange={(newSettings) =>
-            setDrawingSettings((prev) => ({ ...prev, ...newSettings }))
+            setDrawingSettings((prev) => {
+              // Create a properly typed update to ensure type consistency
+              return {
+                ...prev,
+                ...newSettings,
+                // Ensure the lineStyle and lineEndStyle are properly typed
+                lineStyle: (newSettings.lineStyle || prev.lineStyle) as LineStyle,
+                lineEndStyle: (newSettings.lineEndStyle || prev.lineEndStyle) as "none" | "arrow"
+              };
+            })
           }
           onClearCanvas={handleClearCanvas}
           isMobile={isMobile}
@@ -1757,8 +1897,9 @@ const GameCanvas: React.FC = () => {
                   fontWeight: "bold",
                   fontSize: "24px",
                 }}
+                ref={redScoreRef}
               >
-                {calculateScore().red}
+                {redScore}
               </div>
               <div
                 style={{
@@ -1781,8 +1922,9 @@ const GameCanvas: React.FC = () => {
                   fontWeight: "bold",
                   fontSize: "24px",
                 }}
+                ref={blueScoreRef}
               >
-                {calculateScore().blue}
+                {blueScore}
               </div>
             </div>
 
@@ -1880,19 +2022,42 @@ const GameCanvas: React.FC = () => {
           >
             {/* Center HangLadder - non-draggable */}
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-              <Image
-                src="/assets/svg/HangLadder.svg"
-                alt="Hang Ladder"
-                width={HANG_LADDER_SIZE_INCHES * scale}
-                height={HANG_LADDER_SIZE_INCHES * scale}
-                priority
-              />
-              {/* Clickable area for high stake popup in bottom corner */}
-              <div 
-                className="absolute bottom-0 right-0 w-24 h-24 cursor-pointer" 
-                onClick={() => setHighStakePopupOpen(true)} 
-                style={{ zIndex: 5 }}
-              ></div>
+              <div className="relative">
+                <Image
+                  src="/assets/svg/HangLadder.svg"
+                  alt="Hang Ladder"
+                  width={HANG_LADDER_SIZE_INCHES * scale}
+                  height={HANG_LADDER_SIZE_INCHES * scale}
+                  priority
+                />
+                
+                {/* Clickable area for high stake popup in bottom right corner */}
+                <div 
+                  className="absolute bottom-0 right-0 w-25 h-25 cursor-pointer" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHighStakePopupOpen(true);
+                    setHangPopupOpen(false);
+                  }}
+                  style={{ 
+                    zIndex: 20,
+                    borderTopLeftRadius: "100%"
+                  }}
+                ></div>
+                
+                {/* Clickable area for hang ladder popup (excluding the high stake area) */}
+                <div 
+                  className="absolute inset-0 cursor-pointer" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHangPopupOpen(true);
+                    setHighStakePopupOpen(false);
+                  }}
+                  style={{ 
+                    zIndex: 10
+                  }}
+                ></div>
+              </div>
             </div>
 
             {/* Draggable Mobile Goals - render each one separately */}
@@ -2003,990 +2168,87 @@ const GameCanvas: React.FC = () => {
         </div>
 
         {/* Team Number Dialog */}
-        <Dialog
+        <TeamNumberDialog
           open={teamNumberDialogOpen}
           onOpenChange={setTeamNumberDialogOpen}
-        >
-          <DialogContent
-            className={`${
-              isDarkMode
-                ? "bg-[#1a1b26] text-white border-[#292e42]"
-                : "bg-white"
-            }`}
-          >
-            <Button 
-              className="absolute right-3 top-3 rounded-full p-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-all z-50" 
-              onClick={() => setTeamNumberDialogOpen(false)}
-              style={{ cursor: 'pointer' }}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            
-            <div className="h-4"></div>
-            <DialogHeader className="pt-4">
-              <DialogTitle>Enter Team Number</DialogTitle>
-            </DialogHeader>
-            <DialogDescription className="pb-4">
-              Enter the team number for the selected square.
-            </DialogDescription>
-            <Input
-              value={teamNumberInput}
-              onChange={(e) => setTeamNumberInput(e.target.value)}
-              placeholder="Team Number"
-              className={`${
-                isDarkMode ? "bg-[#24283b] text-white border-[#292e42]" : ""
-              }`}
-            />
-            <DialogFooter className="mt-4">
-              <DialogClose asChild>
-                <Button
-                  className={
-                    isDarkMode
-                      ? "bg-[#24283b] text-white border-[#292e42] hover:bg-[#292e42]"
-                      : ""
-                  }
-                >
-                  Cancel
-                </Button>
-              </DialogClose>
-              <Button
-                onClick={saveTeamNumber}
-                className={
-                  isDarkMode ? "bg-[#7aa2f7] text-white hover:bg-[#5d7dcb]" : ""
-                }
-              >
-                Save
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          teamNumber={teamNumberInput}
+          onTeamNumberChange={(newTeamNumber) => setTeamNumberInput(newTeamNumber)}
+          onSave={saveTeamNumber}
+        />
 
         {/* Goal Popup Dialog */}
-        <Dialog
+        <MobileGoalPopup
           open={showGoalPopup}
           onOpenChange={(open) => {
             setShowGoalPopup(open);
             if (!open) setSelectedGoalId(null);
           }}
-        >
-          <DialogContent
-            className={`${
-              isDarkMode
-                ? "bg-[#1a1b26] text-white border-[#292e42]"
-                : "bg-white"
-            }`}
-            style={{ maxWidth: "95%", width: "auto", maxHeight: "90%" }}
-          >
-            <Button 
-              className="absolute right-3 top-3 rounded-full p-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-all z-50" 
-              onClick={() => {
-                setShowGoalPopup(false);
-                setSelectedGoalId(null);
-              }}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            
-            <DialogHeader className="pt-4">
-              <DialogTitle></DialogTitle>
-            </DialogHeader>
-
-            {selectedGoalId && (
-              <div>
-                {/* Ring Display */}
-                <div className="mt-4 flex flex-col items-center">
-                  <p
-                    className={`${
-                      isDarkMode ? "text-gray-300" : "text-gray-700"
-                    } mb-2`}
-                  >
-                    Rings on Goal:{" "}
-                    {mobileGoals.find((g) => g.id === selectedGoalId)?.rings
-                      .length || 0}
-                    /6
-                  </p>
-
-                  {/* Goal and Ring Visualization - Container with fixed height and width */}
-                  <div
-                    className="relative mx-auto"
-                    style={{ 
-                      height: "350px", 
-                      width: "350px", 
-                      position: "relative",
-                      overflow: "hidden"
-                    }}
-                  >
-                    {/* Rings container - fixed positioning */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        zIndex: 100,
-                      }}
-                    >
-                      {mobileGoals
-                        .find((g) => g.id === selectedGoalId)
-                        ?.rings.map((ringColor, index) => {
-                          // Fixed pixel positions
-                          const basePosition = 120; // Base position from top
-                          const spacing = 38; // Spacing between rings
-                          const topPosition = basePosition - index * spacing;
-                          
-                          return (
-                            <Image
-                              key={index}
-                              src={`/assets/svg/${
-                                ringColor === "red"
-                                  ? "RedRingSideView"
-                                  : "BlueRingSideView"
-                              }.svg`}
-                              alt={`${
-                                ringColor.charAt(0).toUpperCase() +
-                                ringColor.slice(1)
-                              } Ring`}
-                              width={350} // Fixed width for the ring
-                              height={70}  // Fixed height for the ring
-                              style={{
-                                position: "absolute",
-                                top: `${topPosition}px`, // Use fixed pixels
-                                left: "50%",
-                                transform: "translateX(-50%) scale(1.5)",
-                                zIndex: 10 + index, // Higher z-index to ensure rings are visible
-                                objectFit: "contain",
-                              }}
-                            />
-                          );
-                        })}
-                    </div>
-
-                    {/* Mobile Goal Side View - fixed size */}
-                    <Image
-                      src="/assets/svg/MobileGoalSideView.svg"
-                      alt="Mobile Goal Side View"
-                      width={350} // Fixed width
-                      height={350} // Fixed height
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "contain",
-                        transform: "scale(1.5)", // Make the goal 50% larger
-                        zIndex: 5, // Lower z-index than rings but higher than container
-                      }}
-                    />
-                  </div>
-
-                  {/* Mini Scoreboard for the Goal */}
-                  <div className="flex justify-around items-center w-full mt-2 mb-2 px-2 sm:px-8">
-                    {(() => {
-                      const goalRings =
-                        mobileGoals.find((g) => g.id === selectedGoalId)
-                          ?.rings || [];
-
-                      // Calculate scores based on the rules:
-                      // Each ring is worth 1 point for its team
-                      // The highest ring is worth an additional 2 points for its team
-                      let redScore = 0;
-                      let blueScore = 0;
-
-                      // Count regular points (1 per ring)
-                      goalRings.forEach((ring) => {
-                        if (ring === "red") redScore += 1;
-                        else if (ring === "blue") blueScore += 1;
-                      });
-
-                      // Add bonus points for the highest ring (2 additional points)
-                      if (goalRings.length > 0) {
-                        const topRing = goalRings[goalRings.length - 1];
-                        if (topRing === "red") redScore += 2;
-                        else if (topRing === "blue") blueScore += 2;
-                      }
-
-                      return (
-                        <>
-                          <div
-                            className="flex flex-col items-center bg-red-100 p-2 rounded-lg shadow-md"
-                            style={{ minWidth: "70px" }}
-                          >
-                            <div className="text-red-600 font-bold text-2xl sm:text-3xl">
-                              {redScore}
-                            </div>
-                            <div className="text-red-600 font-semibold text-sm sm:text-base">
-                              Red
-                            </div>
-                          </div>
-                          <div className="text-gray-700 font-bold text-sm sm:text-base mx-1 sm:mx-4">
-                            Goal Points
-                          </div>
-                          <div
-                            className="flex flex-col items-center bg-blue-100 p-2 rounded-lg shadow-md"
-                            style={{ minWidth: "70px" }}
-                          >
-                            <div className="text-blue-600 font-bold text-2xl sm:text-3xl">
-                              {blueScore}
-                            </div>
-                            <div className="text-blue-600 font-semibold text-sm sm:text-base">
-                              Blue
-                            </div>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Clear spacer to separate goal from buttons */}
-                  <div style={{ height: "20px" }}></div>
-
-                  {/* Ring Control Buttons */}
-                  <div
-                    className="flex flex-wrap justify-center gap-2 sm:space-x-4 sm:flex-nowrap"
-                    style={{ position: "relative", zIndex: 10 }}
-                  >
-                    <Button
-                      onClick={() => {
-                        console.log("Red ring button clicked");
-                        if (selectedGoalId) {
-                          addRingToGoal(selectedGoalId, "red");
-                        }
-                      }}
-                      disabled={
-                        mobileGoals.find((g) => g.id === selectedGoalId)?.rings
-                          .length === 6
-                      }
-                      className={`px-4 py-2 rounded-md ${
-                        mobileGoals.find((g) => g.id === selectedGoalId)?.rings
-                          .length === 6
-                          ? "opacity-50 cursor-not-allowed"
-                          : "hover:opacity-80"
-                      } bg-red-500 text-white hover:bg-red-600`}
-                    >
-                      Add Red Ring
-                    </Button>
-
-                    <Button
-                      onClick={() => {
-                        console.log("Blue ring button clicked");
-                        if (selectedGoalId) {
-                          addRingToGoal(selectedGoalId, "blue");
-                        }
-                      }}
-                      disabled={
-                        mobileGoals.find((g) => g.id === selectedGoalId)?.rings
-                          .length === 6
-                      }
-                      className={`px-4 py-2 rounded-md ${
-                        mobileGoals.find((g) => g.id === selectedGoalId)?.rings
-                          .length === 6
-                          ? "opacity-50 cursor-not-allowed"
-                          : "hover:opacity-80"
-                      } bg-blue-500 text-white hover:bg-blue-600`}
-                    >
-                      Add Blue Ring
-                    </Button>
-
-                    <Button
-                      onClick={() => {
-                        console.log("Remove ring button clicked");
-                        if (selectedGoalId) {
-                          removeRingFromGoal(selectedGoalId);
-                        }
-                      }}
-                      disabled={
-                        mobileGoals.find((g) => g.id === selectedGoalId)?.rings
-                          .length === 0
-                      }
-                      className={`px-4 py-2 rounded-md ${
-                        mobileGoals.find((g) => g.id === selectedGoalId)?.rings
-                          .length === 0
-                          ? "opacity-50 cursor-not-allowed"
-                          : "hover:opacity-80"
-                      } bg-gray-500 text-white hover:bg-gray-600`}
-                    >
-                      Remove Ring
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+          selectedGoalId={selectedGoalId}
+          mobileGoals={mobileGoals}
+          onAddRing={(goalId, color) => {
+            if (selectedGoalId) {
+              addRingToGoal(goalId, color);
+            }
+          }}
+          onRemoveRing={(goalId) => {
+            if (selectedGoalId) {
+              removeRingFromGoal(goalId);
+            }
+          }}
+        />
 
         {/* Wall Stake Popup Dialog */}
-        <Dialog open={showStakePopup} onOpenChange={setShowStakePopup}>
-          <DialogContent
-            className={`${
-              isDarkMode
-                ? "bg-[#1a1b26] text-white border-[#292e42]"
-                : "bg-white"
-            }`}
-            style={{ maxWidth: "95%", width: "auto", maxHeight: "90%" }}
-          >
-            <Button 
-              className="absolute right-3 top-3 rounded-full p-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-all z-50" 
-              onClick={closeStakePopup}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            
-            <DialogHeader className="pt-4">
-              <DialogTitle></DialogTitle>
-            </DialogHeader>
-
-            {selectedStakeId && (
-              <div>
-                {/* Ring Display */}
-                <div className="mt-4 flex flex-col items-center">
-                  <p
-                    className={`${
-                      isDarkMode ? "text-gray-300" : "text-gray-700"
-                    } mb-2`}
-                  >
-                    Rings on Stake:{" "}
-                    {wallStakes.find((s) => s.id === selectedStakeId)?.rings
-                      .length || 0}
-                    /6
-                  </p>
-
-                  {/* Wall Stake and Ring Visualization - Container with fixed height */}
-                  <div
-                    className="relative mx-auto"
-                    style={{ 
-                      height: "350px", 
-                      width: "350px", 
-                      position: "relative",
-                      overflow: "hidden"
-                    }}
-                  >
-                    {/* Rings container - fixed positioning */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        zIndex: 100,
-                      }}
-                    >
-                      {wallStakes
-                        .find((s) => s.id === selectedStakeId)
-                        ?.rings.map((ringColor, index) => {
-                          // Fixed pixel positions
-                          const basePosition = 120; // Base position from top
-                          const spacing = 38; // Spacing between rings
-                          const topPosition = basePosition - index * spacing;
-                          
-                          return (
-                            <Image
-                              key={index}
-                              src={`/assets/svg/${
-                                ringColor === "red"
-                                  ? "RedRingSideView"
-                                  : "BlueRingSideView"
-                              }.svg`}
-                              alt={`${
-                                ringColor.charAt(0).toUpperCase() +
-                                ringColor.slice(1)
-                              } Ring`}
-                              width={350} // Fixed width for the ring
-                              height={70}  // Fixed height for the ring
-                              style={{
-                                position: "absolute",
-                                top: `${topPosition}px`, // Use fixed pixels
-                                left: "50%",
-                                transform: "translateX(-50%) scale(1.5)",
-                                zIndex: 10 + index, // Higher z-index to ensure rings are visible
-                                objectFit: "contain",
-                              }}
-                            />
-                          );
-                        })}
-                    </div>
-
-                    {/* Wall Stake Side View - fixed size */}
-                    <Image
-                      src="/assets/svg/WallStakeSideView.svg"
-                      alt="Wall Stake Side View"
-                      width={350} // Fixed width
-                      height={250} // Fixed height
-                      style={{
-                        position: "absolute",
-                        top: "60px", // Positioned lower in the container
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "contain",
-                        transform: "scale(1.5)", // Make the stake 50% larger
-                        zIndex: 5, // Lower z-index than rings but higher than container
-                      }}
-                    />
-                  </div>
-
-                  {/* Mini Scoreboard for the Stake */}
-                  <div className="flex justify-around items-center w-full mt-2 mb-2 px-2 sm:px-8">
-                    {(() => {
-                      const stakeRings =
-                        wallStakes.find((s) => s.id === selectedStakeId)
-                          ?.rings || [];
-
-                      // Calculate scores based on the same rules as mobile goals:
-                      // Each ring is worth 1 point for its team
-                      // The highest ring is worth an additional 2 points for its team
-                      let redScore = 0;
-                      let blueScore = 0;
-
-                      // Count regular points (1 per ring)
-                      stakeRings.forEach((ring) => {
-                        if (ring === "red") redScore += 1;
-                        else if (ring === "blue") blueScore += 1;
-                      });
-
-                      // Add bonus points for the highest ring (2 additional points)
-                      if (stakeRings.length > 0) {
-                        const topRing = stakeRings[stakeRings.length - 1];
-                        if (topRing === "red") redScore += 2;
-                        else if (topRing === "blue") blueScore += 2;
-                      }
-
-                      return (
-                        <>
-                          <div
-                            className="flex flex-col items-center bg-red-100 p-2 rounded-lg shadow-md"
-                            style={{ minWidth: "70px" }}
-                          >
-                            <div className="text-red-600 font-bold text-2xl sm:text-3xl">
-                              {redScore}
-                            </div>
-                            <div className="text-red-600 font-semibold text-sm sm:text-base">
-                              Red
-                            </div>
-                          </div>
-                          <div className="text-gray-700 font-bold text-sm sm:text-base mx-1 sm:mx-4">
-                            Stake Points
-                          </div>
-                          <div
-                            className="flex flex-col items-center bg-blue-100 p-2 rounded-lg shadow-md"
-                            style={{ minWidth: "70px" }}
-                          >
-                            <div className="text-blue-600 font-bold text-2xl sm:text-3xl">
-                              {blueScore}
-                            </div>
-                            <div className="text-blue-600 font-semibold text-sm sm:text-base">
-                              Blue
-                            </div>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Clear spacer to separate stake from buttons */}
-                  <div style={{ height: "20px" }}></div>
-
-                  {/* Ring Control Buttons */}
-                  <div className="flex justify-around w-full mb-2">
-                    <div className="space-x-2">
-                      <Button
-                        className={`px-4 py-2 rounded-md bg-red-500 text-white hover:bg-red-600`}
-                        onClick={() => {
-                          if (selectedStakeId) {
-                            addRingToStake(selectedStakeId, "red");
-                          }
-                        }}
-                        disabled={
-                          !selectedStakeId ||
-                          (wallStakes.find((s) => s.id === selectedStakeId)?.rings
-                            .length || 0) >= 6
-                        }
-                      >
-                        Add Red Ring
-                      </Button>
-                      <Button
-                        className={`px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600`}
-                        onClick={() => {
-                          if (selectedStakeId) {
-                            addRingToStake(selectedStakeId, "blue");
-                          }
-                        }}
-                        disabled={
-                          !selectedStakeId ||
-                          (wallStakes.find((s) => s.id === selectedStakeId)?.rings
-                            .length || 0) >= 6
-                        }
-                      >
-                        Add Blue Ring
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Button
-                      onClick={() => {
-                        console.log("Remove ring button clicked");
-                        if (selectedStakeId) {
-                          removeRingFromStake(selectedStakeId);
-                        }
-                      }}
-                      disabled={
-                        wallStakes.find((s) => s.id === selectedStakeId)?.rings
-                          .length === 0
-                      }
-                      className={`px-4 py-2 rounded-md ${
-                        wallStakes.find((s) => s.id === selectedStakeId)?.rings
-                          .length === 0
-                          ? "opacity-50 cursor-not-allowed"
-                          : "hover:opacity-80"
-                      } bg-gray-500 text-white hover:bg-gray-600`}
-                    >
-                      Remove Ring
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+        <WallStakePopup
+          open={showStakePopup}
+          onOpenChange={setShowStakePopup}
+          selectedStakeId={selectedStakeId}
+          wallStakes={wallStakes}
+          onAddRing={(stakeId, color) => {
+            if (selectedStakeId) {
+              addRingToStake(stakeId, color);
+            }
+          }}
+          onRemoveRing={(stakeId) => {
+            if (selectedStakeId) {
+              removeRingFromStake(stakeId);
+            }
+          }}
+        />
 
         {/* Team Stake Popup Dialog */}
-        <Dialog open={showTeamStakePopup} onOpenChange={setShowTeamStakePopup}>
-          <DialogContent
-            className={`${
-              isDarkMode
-                ? "bg-[#1a1b26] text-white border-[#292e42]"
-                : "bg-white"
-            }`}
-            style={{ maxWidth: "95%", width: "auto", maxHeight: "90%" }}
-          >
-            <Button 
-              className="absolute right-3 top-3 rounded-full p-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-all z-50" 
-              onClick={closeTeamStakePopup}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            
-            <DialogHeader className="pt-4">
-              <DialogTitle></DialogTitle>
-            </DialogHeader>
-
-            {selectedTeamStakeId && (
-              <div>
-                {/* Ring Display */}
-                <div className="mt-4 flex flex-col items-center">
-                  <p
-                    className={`${
-                      isDarkMode ? "text-gray-300" : "text-gray-700"
-                    } mb-2`}
-                  >
-                    Rings on Stake:{" "}
-                    {teamStakes.find((s) => s.id === selectedTeamStakeId)?.rings
-                      .length || 0}
-                    /2
-                  </p>
-
-                  {/* Team Stake and Ring Visualization - Container with fixed height */}
-                  <div
-                    className="relative mx-auto"
-                    style={{ 
-                      height: "250px", 
-                      width: "350px", 
-                      position: "relative",
-                      overflow: "hidden"
-                    }}
-                  >
-                    {/* Team Stake Side View - fixed size */}
-                    <div style={{ position: "relative", height: "100%", width: "100%" }}>
-                      {/* Stake image */}
-                      <Image
-                        src={`/assets/svg/${selectedTeamStakeId === "redStake" ? "RedStakeSideView" : "BlueStakeSideView"}.svg`}
-                        alt={`${selectedTeamStakeId === "redStake" ? "Red" : "Blue"} Stake View`}
-                        width={350} // Fixed width
-                        height={250} // Fixed height
-                        style={{
-                          position: "absolute",
-                          top: "60px", // Positioned lower in the container
-                          left: 0,
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "contain",
-                          transform: "scale(1.5)", // Make the stake 50% larger
-                        }}
-                      />
-                      
-                      {/* Rings - positioned on top of stake */}
-                      {teamStakes
-                        .find((s) => s.id === selectedTeamStakeId)
-                        ?.rings.map((ringColor, index) => {
-                          // Fixed pixel positions
-                          const basePosition = 20; // Base position from top
-                          const spacing = 30; // Spacing between rings
-                          const topPosition = basePosition - index * spacing;
-                          
-                          return (
-                            <div 
-                              key={index}
-                              style={{
-                                position: "absolute",
-                                top: `${topPosition}px`,
-                                left: 0,
-                                width: "100%",
-                                zIndex: 10 + index, // Ensure rings are above stake
-                                display: "flex",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Image
-                                src={`/assets/svg/${
-                                  ringColor === "red"
-                                    ? "RedRingSideView"
-                                    : "BlueRingSideView"
-                                }.svg`}
-                                alt={`${
-                                  ringColor.charAt(0).toUpperCase() +
-                                  ringColor.slice(1)
-                                } Ring`}
-                                width={300} // Fixed width for the ring
-                                height={60} // Fixed height for the ring
-                                style={{
-                                  transform: "scale(1.5)",
-                                  objectFit: "contain",
-                                }}
-                              />
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-
-                  {/* Mini Scoreboard for the Team Stake */}
-                  {selectedTeamStakeId === "redStake" ? (
-                    // Only red score for red stake
-                    <div className="flex justify-around items-center w-full mt-2 mb-2 px-2 sm:px-8">
-                      {(() => {
-                        const stakeRings =
-                          teamStakes.find((s) => s.id === selectedTeamStakeId)
-                            ?.rings || [];
-
-                        // Calculate scores based on the same rules
-                        let redScore = 0;
-
-                        // Count regular points (1 per ring)
-                        stakeRings.forEach((ring) => {
-                          if (ring === "red") redScore += 1;
-                        });
-
-                        // Add bonus points for the highest ring (2 additional points)
-                        if (stakeRings.length > 0) {
-                          const topRing = stakeRings[stakeRings.length - 1];
-                          if (topRing === "red") redScore += 2;
-                        }
-
-                        return (
-                          <div
-                            className="flex flex-col items-center bg-red-100 p-2 rounded-lg shadow-md"
-                            style={{ minWidth: "70px" }}
-                          >
-                            <div className="text-red-600 font-bold text-2xl sm:text-3xl">
-                              {redScore}
-                            </div>
-                            <div className="text-red-600 font-semibold text-sm sm:text-base">
-                              Red Stake Points
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    // Only blue score for blue stake
-                    <div className="flex justify-around items-center w-full mt-2 mb-2 px-2 sm:px-8">
-                      {(() => {
-                        const stakeRings =
-                          teamStakes.find((s) => s.id === selectedTeamStakeId)
-                            ?.rings || [];
-
-                        // Calculate scores based on the same rules
-                        let blueScore = 0;
-
-                        // Count regular points (1 per ring)
-                        stakeRings.forEach((ring) => {
-                          if (ring === "blue") blueScore += 1;
-                        });
-
-                        // Add bonus points for the highest ring (2 additional points)
-                        if (stakeRings.length > 0) {
-                          const topRing = stakeRings[stakeRings.length - 1];
-                          if (topRing === "blue") blueScore += 2;
-                        }
-
-                        return (
-                          <div
-                            className="flex flex-col items-center bg-blue-100 p-2 rounded-lg shadow-md"
-                            style={{ minWidth: "70px" }}
-                          >
-                            <div className="text-blue-600 font-bold text-2xl sm:text-3xl">
-                              {blueScore}
-                            </div>
-                            <div className="text-blue-600 font-semibold text-sm sm:text-base">
-                              Blue Stake Points
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-
-                  {/* Clear spacer to separate stake from buttons */}
-                  <div style={{ height: "20px" }}></div>
-
-                  {/* Ring Control Buttons - Only show appropriate color button for each stake */}
-                  <div className="flex justify-around w-full mb-2">
-                    <div className="space-x-2">
-                      {selectedTeamStakeId === "redStake" ? (
-                        <Button
-                          className={`px-4 py-2 rounded-md bg-red-500 text-white hover:bg-red-600 ${
-                            teamStakes.find((s) => s.id === selectedTeamStakeId)?.rings
-                              .length === 2
-                              ? "opacity-50 cursor-not-allowed"
-                              : "hover:opacity-80"
-                          }`}
-                          onClick={() => {
-                            if (selectedTeamStakeId) {
-                              addRingToTeamStake(selectedTeamStakeId, "red");
-                            }
-                          }}
-                          disabled={
-                            !selectedTeamStakeId ||
-                            (teamStakes.find((s) => s.id === selectedTeamStakeId)?.rings
-                              .length || 0) >= 2
-                          }
-                        >
-                          Add Red Ring
-                        </Button>
-                      ) : (
-                        <Button
-                          className={`px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 ${
-                            teamStakes.find((s) => s.id === selectedTeamStakeId)?.rings
-                              .length === 2
-                              ? "opacity-50 cursor-not-allowed"
-                              : "hover:opacity-80"
-                          }`}
-                          onClick={() => {
-                            if (selectedTeamStakeId) {
-                              addRingToTeamStake(selectedTeamStakeId, "blue");
-                            }
-                          }}
-                          disabled={
-                            !selectedTeamStakeId ||
-                            (teamStakes.find((s) => s.id === selectedTeamStakeId)?.rings
-                              .length || 0) >= 2
-                          }
-                        >
-                          Add Blue Ring
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <Button
-                      onClick={() => {
-                        if (selectedTeamStakeId) {
-                          removeRingFromTeamStake(selectedTeamStakeId);
-                        }
-                      }}
-                      disabled={
-                        teamStakes.find((s) => s.id === selectedTeamStakeId)?.rings
-                          .length === 0
-                      }
-                      className={`px-4 py-2 rounded-md ${
-                        teamStakes.find((s) => s.id === selectedTeamStakeId)?.rings
-                          .length === 0
-                          ? "opacity-50 cursor-not-allowed"
-                          : "hover:opacity-80"
-                      } bg-gray-500 text-white hover:bg-gray-600`}
-                    >
-                      Remove Ring
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+        <TeamStakePopup
+          open={showTeamStakePopup}
+          onOpenChange={setShowTeamStakePopup}
+          selectedStakeId={selectedStakeId}
+          teamStakes={teamStakes}
+          onAddRing={(stakeId, color) => {
+            if (selectedStakeId) {
+              addRingToTeamStake(stakeId, color);
+            }
+          }}
+          onRemoveRing={(stakeId) => {
+            if (selectedStakeId) {
+              removeRingFromTeamStake(stakeId);
+            }
+          }}
+        />
 
         {/* High Stake Popup */}
-        <Dialog open={highStakePopupOpen} onOpenChange={setHighStakePopupOpen}>
-          <DialogContent
-            className={`${
-              isDarkMode
-                ? "bg-[#1a1b26] text-white border-[#292e42]"
-                : "bg-white"
-            }`}
-            style={{ maxWidth: "95%", width: "auto", maxHeight: "90%" }}
-          >
-            <Button 
-              className="absolute right-3 top-3 rounded-full p-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-all z-50" 
-              onClick={() => {
-                setHighStakePopupOpen(false);
-                setHighStakeRing(null);
-              }}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            
-            <DialogHeader className="pt-4">
-              <DialogTitle></DialogTitle>
-            </DialogHeader>
+        <HighStakePopup
+          open={highStakePopupOpen}
+          onOpenChange={setHighStakePopupOpen}
+          ringColor={highStakeRing}
+          onRingColorChange={setHighStakeRing}
+        />
 
-            <div className="mt-4 flex flex-col items-center">
-              <p
-                className={`${
-                  isDarkMode ? "text-gray-300" : "text-gray-700"
-                } mb-2`}
-              >
-                Rings on High Stake: {highStakeRing ? "1" : "0"}/1
-              </p>
-
-              {/* High Stake and Ring Visualization - Container with fixed height */}
-              <div
-                className="relative mx-auto"
-                style={{ 
-                  height: "250px", 
-                  width: "350px", 
-                  position: "relative",
-                  overflow: "hidden"
-                }}
-              >
-                {/* High Stake Side View - fixed size */}
-                <Image
-                  src="/assets/svg/HighStakeSideView.svg"
-                  alt="High Stake Side View"
-                  width={350} // Fixed width
-                  height={250} // Fixed height
-                  style={{
-                    position: "absolute",
-                    top: "60px", // Positioned lower in the container
-                    left: 0,
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "contain",
-                    transform: "scale(1.5)", // Make the stake 50% larger
-                    zIndex: 5, // Lower z-index than rings but higher than container
-                  }}
-                />
-                
-                {/* Rings - positioned on top of stake */}
-                {highStakeRing && (
-                  <div 
-                    style={{
-                      position: "absolute",
-                      top: "25px",
-                      left: 0,
-                      width: "100%",
-                      zIndex: 20, // Ensure rings are above stake
-                      display: "flex",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Image
-                      src={`/assets/svg/${
-                        highStakeRing === "red" ? "RedRingSideView" : "BlueRingSideView"
-                      }.svg`}
-                      alt={`${highStakeRing === "red" ? "Red" : "Blue"} Ring`}
-                      width={300} // Fixed width for the ring
-                      height={60} // Fixed height for the ring
-                      style={{
-                        transform: "scale(1.5)",
-                        objectFit: "contain",
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Mini Scoreboard for the High Stake */}
-              <div className="flex justify-around items-center w-full mt-2 mb-2 px-2 sm:px-8">
-                {(() => {
-                  // Calculate scores based on high stake rules:
-                  // 6 points for the team whose ring is on it
-                  const redScore = highStakeRing === "red" ? 6 : 0;
-                  const blueScore = highStakeRing === "blue" ? 6 : 0;
-
-                  return (
-                    <>
-                      <div
-                        className="flex flex-col items-center bg-red-100 p-2 rounded-lg shadow-md"
-                        style={{ minWidth: "70px" }}
-                      >
-                        <div className="text-red-600 font-bold text-2xl sm:text-3xl">
-                          {redScore}
-                        </div>
-                        <div className="text-red-600 font-semibold text-sm sm:text-base">
-                          Red
-                        </div>
-                      </div>
-                      <div className="text-gray-700 font-bold text-sm sm:text-base mx-1 sm:mx-4">
-                        High Stake Points
-                      </div>
-                      <div
-                        className="flex flex-col items-center bg-blue-100 p-2 rounded-lg shadow-md"
-                        style={{ minWidth: "70px" }}
-                      >
-                        <div className="text-blue-600 font-bold text-2xl sm:text-3xl">
-                          {blueScore}
-                        </div>
-                        <div className="text-blue-600 font-semibold text-sm sm:text-base">
-                          Blue
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Clear spacer to separate stake from buttons */}
-              <div style={{ height: "20px" }}></div>
-
-              {/* Ring Control Buttons */}
-              <div className="flex justify-around w-full mb-2">
-                <div className="space-x-2">
-                  <Button
-                    className={`px-4 py-2 rounded-md bg-red-500 text-white hover:bg-red-600`}
-                    onClick={() => setHighStakeRing("red")}
-                    disabled={highStakeRing !== null}
-                  >
-                    Add Red Ring
-                  </Button>
-                  <Button
-                    className={`px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600`}
-                    onClick={() => setHighStakeRing("blue")}
-                    disabled={highStakeRing !== null}
-                  >
-                    Add Blue Ring
-                  </Button>
-                </div>
-              </div>
-
-              <div>
-                <Button
-                  onClick={() => setHighStakeRing(null)}
-                  disabled={highStakeRing === null}
-                  className={`px-4 py-2 rounded-md ${
-                    highStakeRing === null
-                      ? "opacity-50 cursor-not-allowed"
-                      : "hover:opacity-80"
-                  } bg-gray-500 text-white hover:bg-gray-600`}
-                >
-                  Remove Ring
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {/* Hang Popup */}
+        <HangPopup
+          open={hangPopupOpen}
+          onOpenChange={setHangPopupOpen}
+          hangScores={hangScores}
+          onHangScoreChange={handleHangScoreChange}
+          highStakeRing={highStakeRing}
+        />
       </DndContext>
     </div>
   );

@@ -17,6 +17,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "VEX Plan",
   description: "Interactive VEX robotics field planner",
+  icons: {
+    icon: '/assets/svg/Icon.svg',
+  },
 };
 
 export const viewport: Viewport = {
